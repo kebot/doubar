@@ -18,12 +18,9 @@ function TimeWidget () {
   )
 }
 
-
-
 function App() {
   return (
-    <main className="container font-mono text-sm text-white">
-      &gt; Taubar
+    <main className="font-mono text-sm text-white w-full h-[var(--bar-height)] bg-background/5 px-4 flex justify-between items-center gap-1">
       <AeroSpace />
       <TimeWidget />
     </main>
