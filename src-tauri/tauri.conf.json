@@ -18,22 +18,23 @@
         "resizable": false,
         "visible": true,
         "fullscreen": false,
-        "decorations": false,
         "alwaysOnTop": false,
         "alwaysOnBottom": true,
         "skipTaskbar": true,
-        "transparent": true,
         "hiddenTitle": true,
-        "titleBarStyle": "Overlay",
         "focusable": false,
         "visibleOnAllWorkspaces": true,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "transparent": true,
+        "decorations": false,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {
       "csp": null
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
