@@ -2,7 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
-import { create } from 'zustand'
+// import { create } from 'zustand'
 
 type ASWorkspace = { workspace: string };
 
