@@ -1,6 +1,12 @@
 import { Command } from '@tauri-apps/plugin-shell'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
+import { create } from 'zustand'
+
+// const useAeroSpace = create((set) => ({
+
+
+// })
 
 type ASWorkspace = { workspace: string };
 
@@ -52,6 +58,25 @@ function useWorkspaces(): [string, ASWorkspace[]] {
 }
 
 function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
+  const [windows, setWindows] = useState<ASWindow[]>([])
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      aeroSpaceQuery<ASWindow[]>(`list-windows --workspace ${id}`).then((windows) => {
+        setWindows(windows)
+      })
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [id])
+
+  const hasWindows = windows.length > 0
+
+  // only show space if there's window
+  if (!hasWindows) {
+    return null
+  }
+
   return <span className={clsx(
     'text-foreground',
     'shadow-none',
@@ -59,7 +84,14 @@ function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
     'px-8', 
     'rounded-full',
     isFocused ? 'bg-background' : 'bg-black'
-  )}>{id}</span>
+  )}>{id} {windows.map((window) => 
+    <span key={window["window-id"]} className={clsx(
+      'mr-2',
+      isFocused ? 'text-foreground' : 'text-foreground/50'
+    )}>
+      {window["app-name"]}
+    </span>
+  )}</span>
 }
 
 export default function AeroSpace() {

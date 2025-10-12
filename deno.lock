@@ -14,7 +14,8 @@
     "npm:react@^19.1.0": "19.2.0",
     "npm:tailwindcss@^4.1.14": "4.1.14",
     "npm:typescript@~5.8.3": "5.8.3",
-    "npm:vite@^7.0.4": "7.1.9_picomatch@4.0.3"
+    "npm:vite@^7.0.4": "7.1.9_picomatch@4.0.3",
+    "npm:zustand@^5.0.8": "5.0.8_@types+react@19.2.2_react@19.2.0"
   },
   "npm": {
     "@babel/code-frame@7.27.1": {
@@ -1063,6 +1064,17 @@
     },
     "yallist@5.0.0": {
       "integrity": "sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw=="
+    },
+    "zustand@5.0.8_@types+react@19.2.2_react@19.2.0": {
+      "integrity": "sha512-gyPKpIaxY9XcO2vSMrLbiER7QMAMGOQZVRdJ6Zi782jkbzZygq5GI9nG8g+sMgitRtndwaBSl7uiqC49o1SSiw==",
+      "dependencies": [
+        "@types/react",
+        "react"
+      ],
+      "optionalPeers": [
+        "@types/react",
+        "react"
+      ]
     }
   },
   "workspace": {
@@ -1081,7 +1093,8 @@
         "npm:react@^19.1.0",
         "npm:tailwindcss@^4.1.14",
         "npm:typescript@~5.8.3",
-        "npm:vite@^7.0.4"
+        "npm:vite@^7.0.4",
+        "npm:zustand@^5.0.8"
       ]
     }
   }
