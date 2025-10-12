@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-bar",
+  "productName": "doubar",
   "version": "0.1.0",
-  "identifier": "com.yaofur.tauri-bar",
+  "identifier": "com.yaofur.doubar",
   "build": {
     "beforeDevCommand": "deno task dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-bar",
+        "title": "doubar",
         "width": 1920,
         "height": 60,
         "resizable": false,
