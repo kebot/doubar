@@ -1,4 +1,5 @@
 mod commands;
+mod events;
 
 use tauri::{ActivationPolicy, Manager, PhysicalPosition, PhysicalSize};
 
@@ -33,6 +34,18 @@ pub fn run() {
                 window.set_skip_taskbar(true)?;
                 window.set_always_on_bottom(true)?;
                 window.show()?;
+            }
+
+            // Start event server
+            let app_handle = app.handle().clone();
+            match events::server::try_start_event_server(app_handle, 3030, 10) {
+                Ok(port) => {
+                    println!("Event server started successfully on port {}", port);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to start event server: {}", e);
+                    // Don't fail the app if the server can't start
+                }
             }
 
             Ok(())
