@@ -1,7 +1,7 @@
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSBitmapImageRep, NSImage, NSWorkspace};
 #[cfg(target_os = "macos")]
-use objc2_foundation::{NSData, NSDictionary};
+use objc2_foundation::{NSDictionary};
 
 /// Converts an NSImage to a base64-encoded PNG data URI
 /// Inspired by: https://gist.github.com/hinzundcode/2ca9b9a425b8ed0d9ec4
@@ -13,10 +13,8 @@ fn convert_nsimage_to_base64(icon: &NSImage) -> Result<String, String> {
         .ok_or_else(|| "Failed to get TIFF representation".to_string())?;
 
     // Create NSBitmapImageRep from TIFF data
-    let bitmap_rep = unsafe {
-        NSBitmapImageRep::imageRepWithData(&tiff_data)
-            .ok_or_else(|| "Failed to create bitmap representation".to_string())?
-    };
+    let bitmap_rep = NSBitmapImageRep::imageRepWithData(&tiff_data)
+        .ok_or_else(|| "Failed to create bitmap representation".to_string())?;
 
     // Convert to PNG using NSBitmapImageRep
     let png_data = unsafe {
