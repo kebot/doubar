@@ -1,10 +1,21 @@
-# naming
+# Doubar
 
-TauBar: Tauri Bar
 
-## Compare
+## Get started
 
-- [UberSicht](https://tracesof.net/uebersicht/)
+1. install deno and rust
+
+`brew install deno rust`
+
+2. `deno install`
+
+3. `deno task tauri dev`
+
+See: https://tauri.app/ for more details
+
+## Simular Projects
+
+- [UeberSicht](https://tracesof.net/uebersicht/)
 - [SketchyBar](https://github.com/FelixKratz/SketchyBar)
 - [Zebar](https://github.com/glzr-io/zebar)
 
@@ -13,23 +24,13 @@ TauBar: Tauri Bar
 Instead Config it via yaml/json or other config file, the main config file is a React Component
 
 ```tsx
-// ~/.config/taubar/App.tsx
-import { Time } from 'taobar/component' 
+// ~/.config/doubar/App.tsx
+import { Time } from 'doubar/component' 
 
 function App () {
     return <Time>
 }
 ```
-
-Competible with UeberSicht's plugin
-
-```tsx
-
-```
-
-## Dev, Tauri + React + TypeScript
-
-- deno task tauri dev
 
 ## Recommended IDE Setup
 
