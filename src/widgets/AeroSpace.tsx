@@ -1,12 +1,20 @@
 import { Command } from '@tauri-apps/plugin-shell'
+import { invoke } from '@tauri-apps/api/core'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 import { create } from 'zustand'
 
-// const useAeroSpace = create((set) => ({
-
-
-// })
+// Icon cache store
+const useIconCache = create<{
+  icons: Record<string, string>
+  setIcon: (appName: string, iconData: string) => void
+}>((set) => ({
+  icons: {},
+  setIcon: (appName, iconData) =>
+    set((state) => ({
+      icons: { ...state.icons, [appName]: iconData }
+    }))
+}))
 
 type ASWorkspace = { workspace: string };
 
@@ -57,6 +65,50 @@ function useWorkspaces(): [string, ASWorkspace[]] {
   return [focusedWorkspace, workspaces]
 }
 
+function AppIcon({ appName, isFocused }: { appName: string, isFocused: boolean }) {
+  const { icons, setIcon } = useIconCache()
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    // If we already have the icon, don't fetch again
+    if (icons[appName]) {
+      return
+    }
+
+    // Fetch the icon
+    setLoading(true)
+    invoke<string>('get_app_icon', { appName })
+      .then((iconData) => {
+        setIcon(appName, iconData)
+        setLoading(false)
+      })
+      .catch((error) => {
+        console.error(`Failed to fetch icon for ${appName}:`, error)
+        setLoading(false)
+      })
+  }, [appName, icons, setIcon])
+
+  const iconData = icons[appName]
+
+  if (loading || !iconData) {
+    // Fallback to text while loading or if icon fetch failed
+    return (
+      <span className={clsx('mr-2', isFocused ? 'text-foreground' : 'text-foreground/50')}>
+        {appName}
+      </span>
+    )
+  }
+
+  return (
+    <img
+      src={iconData}
+      alt={appName}
+      title={appName}
+      className="w-4 h-4 mr-2"
+    />
+  )
+}
+
 function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
   const [windows, setWindows] = useState<ASWindow[]>([])
 
@@ -81,16 +133,16 @@ function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
     'text-foreground',
     'shadow-none',
     'outline-none',
-    'px-8', 
+    'px-8',
     'rounded-full',
+    'flex items-center',
     isFocused ? 'bg-background' : 'bg-black'
-  )}>{id} {windows.map((window) => 
-    <span key={window["window-id"]} className={clsx(
-      'mr-2',
-      isFocused ? 'text-foreground' : 'text-foreground/50'
-    )}>
-      {window["app-name"]}
-    </span>
+  )}>{id} / {windows.map((window) =>
+    <AppIcon
+      key={window["window-id"]}
+      appName={window["app-name"]}
+      isFocused={isFocused}
+    />
   )}</span>
 }
 
