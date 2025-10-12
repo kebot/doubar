@@ -1,7 +1,49 @@
 #[cfg(target_os = "macos")]
-use objc2_app_kit::NSWorkspace;
+use objc2_app_kit::{NSBitmapImageRep, NSImage, NSWorkspace};
+#[cfg(target_os = "macos")]
+use objc2_foundation::{NSData, NSDictionary};
 
-// https://tauri.app/develop/calling-rust/
+/// Converts an NSImage to a base64-encoded PNG data URI
+/// Inspired by: https://gist.github.com/hinzundcode/2ca9b9a425b8ed0d9ec4
+#[cfg(target_os = "macos")]
+fn convert_nsimage_to_base64(icon: &NSImage) -> Result<String, String> {
+    // Convert NSImage to TIFF data
+    let tiff_data = icon
+        .TIFFRepresentation()
+        .ok_or_else(|| "Failed to get TIFF representation".to_string())?;
+
+    // Create NSBitmapImageRep from TIFF data
+    let bitmap_rep = unsafe {
+        NSBitmapImageRep::imageRepWithData(&tiff_data)
+            .ok_or_else(|| "Failed to create bitmap representation".to_string())?
+    };
+
+    // Convert to PNG using NSBitmapImageRep
+    let png_data = unsafe {
+        let properties = NSDictionary::new();
+        bitmap_rep
+            .representationUsingType_properties(
+                objc2_app_kit::NSBitmapImageFileType::PNG,
+                &*properties,
+            )
+            .ok_or_else(|| "Failed to convert to PNG".to_string())?
+    };
+
+    // Get the raw bytes and encode to base64
+    let bytes = png_data.to_vec();
+    let base64_str = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
+
+    Ok(format!("data:image/png;base64,{}", base64_str))
+}
+
+/// Gets the icon of a running application by name and returns it as a base64-encoded PNG data URI
+/// 
+/// # Arguments
+/// * `app_name` - The localized name of the application
+/// 
+/// # Returns
+/// * `Ok(String)` - Base64-encoded PNG data URI of the app icon
+/// * `Err(String)` - Error message if the app is not found or icon conversion fails
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn get_app_icon(app_name: String) -> Result<String, String> {
@@ -19,29 +61,9 @@ pub fn get_app_icon(app_name: String) -> Result<String, String> {
             if name == app_name {
                 // Get the app icon
                 if let Some(icon) = app.icon() {
-                    // Convert NSImage to TIFF data
-                    if let Some(tiff_data) = icon.TIFFRepresentation() {
-                        // Get the raw bytes from NSData as a Vec
-                        let bytes = tiff_data.to_vec();
-
-                        // Convert TIFF to PNG using image crate
-                        if let Ok(img) = image::load_from_memory(&bytes) {
-                            let mut png_data = Vec::new();
-                            let mut cursor = std::io::Cursor::new(&mut png_data);
-
-                            if img
-                                .write_to(&mut cursor, image::ImageFormat::Png)
-                                .is_ok()
-                            {
-                                // Encode to base64
-                                let base64_str = base64::Engine::encode(
-                                    &base64::engine::general_purpose::STANDARD,
-                                    &png_data,
-                                );
-                                return Ok(format!("data:image/png;base64,{}", base64_str));
-                            }
-                        }
-                    }
+                    return convert_nsimage_to_base64(&icon);
+                } else {
+                    return Err(format!("Could not get icon for app '{}'", app_name));
                 }
             }
         }

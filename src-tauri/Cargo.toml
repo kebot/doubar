@@ -24,8 +24,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-shell = "2"
 objc2 = "0.5"
-objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSImage"] }
-objc2-foundation = { version = "0.2", features = ["NSString", "NSData", "NSArray"] }
+objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplication", "NSImage", "NSBitmapImageRep"] }
+objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSArray", "NSDictionary", "NSGeometry"] }
 base64 = "0.22"
 image = "0.25"
 
