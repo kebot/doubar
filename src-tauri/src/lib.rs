@@ -17,17 +17,20 @@ pub fn run() {
 
             let window = app.get_webview_window("main").unwrap();
 
-            // Get the primary monitor
+            // Get the built-in screen (primary monitor)
             if let Some(monitor) = window.current_monitor()? {
-                let screen_size = monitor.size();
-                let window_height = 60;
+                let screen_frame = monitor.size();
+                let screen_position = monitor.position();
 
-                // Set window size and position
+                // Set window size to match screen frame width and maintain height
                 window.set_size(PhysicalSize {
-                    width: screen_size.width,
-                    height: window_height,
+                    width: screen_frame.width,
+                    height: screen_frame.height,
                 })?;
-                window.set_position(PhysicalPosition { x: 0, y: 0 })?;
+                window.set_position(PhysicalPosition {
+                    x: screen_position.x,
+                    y: screen_position.y
+                })?;
                 window.set_focusable(false)?;
                 window.set_visible_on_all_workspaces(true)?;
                 window.set_skip_taskbar(true)?;
