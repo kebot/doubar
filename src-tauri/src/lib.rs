@@ -1,17 +1,13 @@
-use tauri::{ActivationPolicy, Manager, PhysicalPosition, PhysicalSize};
+mod commands;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+use tauri::{ActivationPolicy, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![commands::get_app_icon::get_app_icon])
         .setup(|app| {
             // https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy-swift.enum/prohibited?language=objc
             // Description: The application doesn’t appear in the Dock and may not create windows or be activated.

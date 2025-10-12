@@ -1,14 +1,10 @@
 # Doubar
 
-
 ## Get started
 
 1. install deno and rust
-
 `brew install deno rust`
-
 2. `deno install`
-
 3. `deno task tauri dev`
 
 See: https://tauri.app/ for more details
@@ -19,18 +15,31 @@ See: https://tauri.app/ for more details
 - [SketchyBar](https://github.com/FelixKratz/SketchyBar)
 - [Zebar](https://github.com/glzr-io/zebar)
 
-## Goals
+## Provided Rust API
 
-Instead Config it via yaml/json or other config file, the main config file is a React Component
+```typescript
+import { invoke } from '@tauri-apps/api/core'
+// get app icon as base64 icons
+invoke<string>('<app-name>', { appName })
 
-```tsx
-// ~/.config/doubar/App.tsx
-import { Time } from 'doubar/component' 
+// running shell command
+import { Command } from '@tauri-apps/plugin-shell'
 
-function App () {
-    return <Time>
-}
 ```
+
+## Config API
+
+- Native Config UI
+- yaml, json, toml, xml, etc..., 
+- JSX Project(deno) like Uebersicht
+    ```tsx
+    // ~/.config/doubar/App.tsx
+    import { Time } from 'doubar/component' 
+
+    function App () {
+        return <Time>
+    }
+    ```
 
 ## Recommended IDE Setup
 

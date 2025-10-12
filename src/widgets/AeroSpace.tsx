@@ -1,12 +1,8 @@
 import { Command } from '@tauri-apps/plugin-shell'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
-import { create } from 'zustand'
-
-// const useAeroSpace = create((set) => ({
-
-
-// })
+import { AppIcon } from '../components/AppIcon'
+// import { create } from 'zustand'
 
 type ASWorkspace = { workspace: string };
 
@@ -81,16 +77,16 @@ function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
     'text-foreground',
     'shadow-none',
     'outline-none',
-    'px-8', 
+    'px-8',
     'rounded-full',
+    'flex items-center',
     isFocused ? 'bg-background' : 'bg-black'
-  )}>{id} {windows.map((window) => 
-    <span key={window["window-id"]} className={clsx(
-      'mr-2',
-      isFocused ? 'text-foreground' : 'text-foreground/50'
-    )}>
-      {window["app-name"]}
-    </span>
+  )}>{id}  <span>&nbsp;</span> {windows.map((window) =>
+    <AppIcon
+      key={window["window-id"]}
+      appName={window["app-name"]}
+      className={clsx('mr-2', 'w-4', 'h-4', isFocused ? '' : 'contrast-50')}
+    />
   )}</span>
 }
 
