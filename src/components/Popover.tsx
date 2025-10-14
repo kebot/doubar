@@ -19,17 +19,21 @@ export const Popover = ({
           return
         }
 
+        // setInteractable
         if (open) {
           invoke('set_window_behavior', {
             ignoreCursorEvents: false,
             alwaysOnTop: true,
             alwaysOnBottom: false,
+            focusable: true,
           })
         } else {
           invoke('set_window_behavior', {
             ignoreCursorEvents: false,
             alwaysOnTop: false,
             alwaysOnBottom: true,
+            focusable: false,
+            recreate: true,
           })
         }
       }}

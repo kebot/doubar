@@ -106,7 +106,12 @@ const WorkspaceLabel = ({ id }: { id: string }) => {
   return (
     <Popover trigger={<>{workspaceIdToName(id)}</>}>
       <div className='text-foreground'>
-        <input type='text' className='text-foreground border-1 cursor-text' ref={inputRef} />
+        <input 
+          type='text' 
+          className='text-foreground rounded-full px-2 border-1 cursor-text'
+          ref={inputRef}
+          defaultValue={workspaceIdToName(id)} 
+        />
       </div>
     </Popover>
   )
