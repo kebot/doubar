@@ -1,26 +1,26 @@
 import { Command } from '@tauri-apps/plugin-shell'
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
 // import { create } from 'zustand'
 
-type ASWorkspace = { workspace: string };
+type ASWorkspace = { workspace: string }
 
 type ASWindow = {
-  "app-name": string,
-  "window-id": number,
-  "window-title": string
+  'app-name': string
+  'window-id': number
+  'window-title': string
 }
 
 type ASMonitor = {
-  "monitor-id": number,
-  "monitor-name": string
+  'monitor-id': number
+  'monitor-name': string
 }
 
 type ASApp = {
-  "app-bundle-0id": string,
-  "app-name": string,
-  "app-pid": number
+  'app-bundle-0id': string
+  'app-name': string
+  'app-pid': number
 }
 
 async function aeroSpaceQuery<T>(query: string): Promise<T> {
@@ -53,7 +53,28 @@ function useWorkspaces(): [string, ASWorkspace[]] {
   return [focusedWorkspace, workspaces]
 }
 
-function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
+function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boolean }) {
+  return (
+    <div className={clsx(
+      'ml-2 flex',
+      isFocused ? 'contrast-100' : 'contrast-50'
+    )}>
+      {windows.map((window, index) => (
+        <AppIcon
+          key={window['window-id']}
+          appName={window['app-name']}
+          className={clsx(
+            'mr-2', 'w-4', 'h-4',
+            'transition-all duration-300',
+            index > 0 && !isFocused && '-ml-5'
+          )}
+        />
+      ))}
+    </div>
+  )
+}
+
+function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
   const [windows, setWindows] = useState<ASWindow[]>([])
 
   useEffect(() => {
@@ -73,31 +94,34 @@ function Workspace({ id, isFocused }: { id: string, isFocused: boolean }) {
     return null
   }
 
-  return <span className={clsx(
-    'text-foreground',
-    'shadow-none',
-    'outline-none',
-    'px-8',
-    'rounded-full',
-    'flex items-center',
-    isFocused ? 'bg-background' : 'bg-black'
-  )}>{id}  <span>&nbsp;</span> {windows.map((window) =>
-    <AppIcon
-      key={window["window-id"]}
-      appName={window["app-name"]}
-      className={clsx('mr-2', 'w-4', 'h-4', isFocused ? '' : 'contrast-50')}
-    />
-  )}</span>
+  return (
+    <span
+      className={clsx(
+        'text-foreground',
+        'shadow-none',
+        'outline-none',
+        'px-4',
+        'rounded-full',
+        'flex items-center',
+        isFocused ? 'bg-background' : 'bg-black'
+      )}
+    >
+      {id}{' '}
+      <Windows windows={windows} isFocused={isFocused} />
+    </span>
+  )
 }
 
 export default function AeroSpace() {
   const [focusedWorkspace, workspaces] = useWorkspaces()
 
   return (
-    <div className="flex items-center gap-1">
+    <div className='flex items-center gap-1'>
       {workspaces.map((workspace) => {
         const isFocused = workspace.workspace === focusedWorkspace
-        return <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} />
+        return (
+          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} />
+        )
       })}
     </div>
   )
