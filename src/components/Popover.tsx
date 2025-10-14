@@ -21,15 +21,15 @@ export const Popover = ({
 
         if (open) {
           invoke('set_window_behavior', {
-            ignore_cursor_events: false,
-            always_on_top: true,
-            always_on_bottom: false,
+            ignoreCursorEvents: false,
+            alwaysOnTop: true,
+            alwaysOnBottom: false,
           })
         } else {
           invoke('set_window_behavior', {
-            ignore_cursor_events: true,
-            always_on_top: true,
-            always_on_bottom: false,
+            ignoreCursorEvents: false,
+            alwaysOnTop: false,
+            alwaysOnBottom: true,
           })
         }
       }}
@@ -45,6 +45,7 @@ export const Popover = ({
             'border',
             'border-foreground/20',
             'w-48',
+            'text-foreground',
           )}>
             {children}
           </BasePopover.Popup>

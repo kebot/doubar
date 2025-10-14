@@ -1,5 +1,5 @@
 import { Command } from '@tauri-apps/plugin-shell'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
 import { Popover } from '../components/Popover'
@@ -93,6 +93,25 @@ function workspaceIdToName(id: string): string {
   return id
 }
 
+const WorkspaceLabel = ({ id }: { id: string }) => {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (input) {
+      input.focus()
+    }
+  }, [inputRef])
+
+  return (
+    <Popover trigger={<>{workspaceIdToName(id)}</>}>
+      <div className='text-foreground'>
+        <input type='text' className='text-foreground border-1 cursor-text' ref={inputRef} />
+      </div>
+    </Popover>
+  )
+}
+
 function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
   const [windows, setWindows] = useState<ASWindow[]>([])
 
@@ -126,12 +145,7 @@ function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
         isFocused ? 'bg-background' : 'bg-black'
       )}
     >
-      <Popover
-        trigger={<>{workspaceIdToName(id)}</>}
-      >
-        <div className='text-foreground'>Popover content</div>
-      </Popover>
-
+      <WorkspaceLabel id={id} />
       <Windows windows={windows} isFocused={isFocused} />
     </span>
   )
