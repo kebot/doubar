@@ -57,6 +57,7 @@ function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boole
   return (
     <div className={clsx(
       'ml-2 flex',
+      'transition-all duration-300',
       isFocused ? 'contrast-100' : 'contrast-50'
     )}>
       {windows.map((window, index) => (
