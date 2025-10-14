@@ -28,4 +28,5 @@ objc2-app-kit = { version = "0.3", features = ["NSWorkspace", "NSRunningApplicat
 objc2-foundation = { version = "0.3", features = ["NSString", "NSData", "NSArray", "NSDictionary", "NSGeometry"] }
 base64 = "0.22"
 image = "0.25"
+tiny_http = "0.12"
 

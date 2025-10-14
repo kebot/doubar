@@ -11,12 +11,6 @@
 
 See: https://tauri.app/ for more details
 
-## Simular Projects
-
-- [UeberSicht](https://tracesof.net/uebersicht/)
-- [SketchyBar](https://github.com/FelixKratz/SketchyBar)
-- [Zebar](https://github.com/glzr-io/zebar)
-
 ## Provided Rust API
 
 ```typescript
@@ -36,3 +30,10 @@ WIP
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+## Simular Projects
+
+- [UeberSicht](https://tracesof.net/uebersicht/)
+- [SketchyBar](https://github.com/FelixKratz/SketchyBar)
+- [Zebar](https://github.com/glzr-io/zebar)
+
