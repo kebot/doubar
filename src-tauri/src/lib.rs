@@ -7,7 +7,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![commands::get_app_icon::get_app_icon])
+        .invoke_handler(tauri::generate_handler![
+            commands::get_app_icon::get_app_icon,
+            commands::set_ignore_cursor_events::set_ignore_cursor_events
+        ])
         .setup(|app| {
             // https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy-swift.enum/prohibited?language=objc
             // Description: The application doesn’t appear in the Dock and may not create windows or be activated.
@@ -34,7 +37,12 @@ pub fn run() {
                 window.set_focusable(false)?;
                 window.set_visible_on_all_workspaces(true)?;
                 window.set_skip_taskbar(true)?;
-                window.set_always_on_bottom(true)?;
+
+                window.set_always_on_top(true)?;
+
+                // Make transparent areas click-through by default
+                window.set_ignore_cursor_events(true)?;
+
                 window.show()?;
             }
 
