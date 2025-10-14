@@ -19,7 +19,7 @@ export const Popover = ({
           return
         }
 
-        // setInteractable
+        // BUG with AeroSpace if you switch workspace during focusable=true, the window will be focusable forever
         if (open) {
           invoke('set_window_behavior', {
             ignoreCursorEvents: false,
@@ -43,12 +43,11 @@ export const Popover = ({
       <BasePopover.Portal>
         <BasePopover.Positioner sideOffset={8}>
           <BasePopover.Popup className={clsx(
-            'bg-background/80',
+            'bg-transparent',
             'rounded-md',
             'p-2',
-            'border',
+            'border-0',
             'border-foreground/20',
-            'w-48',
             'text-foreground',
           )}>
             {children}

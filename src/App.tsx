@@ -16,17 +16,13 @@ function TimeWidget() {
 }
 
 function App() {
-  useEffect(() => {
-    invoke('set_window_behavior', {
-      ignoreCursorEvents: false,
-      alwaysOnTop: true,
-    })
-  }, [])
-
   return (
     <main className='w-full h-[100vh]'>
       <div className='font-mono text-sm text-white w-full h-[var(--bar-height)] bg-background/5 px-4 flex justify-between items-center gap-1'>
-        <AeroSpace />
+        <div className='flex'>
+          <AeroSpace />
+        </div>
+
         <TimeWidget />
       </div>
     </main>

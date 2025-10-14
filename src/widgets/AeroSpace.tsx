@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
 import { Popover } from '../components/Popover'
+import { Popover as BasePopover } from '@base-ui-components/react/popover'
+
 
 type ASWorkspace = { workspace: string }
 
@@ -79,16 +81,12 @@ function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boole
   )
 }
 
+// TODO save it to persistent storage
 const workspaceNameMap = new Map()
-
-// you can rename your workspace
-workspaceNameMap.set('1', 'random')
-workspaceNameMap.set('2', 'doubar')
-workspaceNameMap.set('3', 'media')
 
 function workspaceIdToName(id: string): string {
   if (workspaceNameMap.has(id)) {
-    return workspaceNameMap.get(id)
+    return workspaceNameMap.get(id) || id
   }
   return id
 }
@@ -103,15 +101,29 @@ const WorkspaceLabel = ({ id }: { id: string }) => {
     }
   }, [inputRef])
 
+  const handleRename = () => {
+    const input = inputRef.current
+
+    if (input) {
+      workspaceNameMap.set(id, input.value)
+    }
+  }
+
   return (
     <Popover trigger={<>{workspaceIdToName(id)}</>}>
       <div className='text-foreground'>
-        <input 
+        <input
           type='text' 
-          className='text-foreground rounded-full px-2 border-1 cursor-text'
+          autoCorrect='off'
+          autoCapitalize='off'
+          autoComplete='off'
+          className='text-foreground rounded-full px-2 border-1 cursor-text outline-none backdrop-blur-xs'
           ref={inputRef}
           defaultValue={workspaceIdToName(id)} 
         />
+        <BasePopover.Close className='text-foreground rounded-full px-2 border-1 cursor-pointer outline-none backdrop-blur-xs ml-2' onClick={handleRename}>
+          Rename
+        </BasePopover.Close>
       </div>
     </Popover>
   )
