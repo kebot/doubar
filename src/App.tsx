@@ -20,9 +20,11 @@ function TimeWidget () {
 
 function App() {
   return (
-    <main className="font-mono text-sm text-white w-full h-[var(--bar-height)] bg-background/5 px-4 flex justify-between items-center gap-1">
-      <AeroSpace />
-      <TimeWidget />
+    <main className="w-full h-full">
+      <div className="font-mono text-sm text-white w-full h-[var(--bar-height)] bg-background/5 px-4 flex justify-between items-center gap-1">
+        <AeroSpace />
+        <TimeWidget />
+      </div>
     </main>
   );
 }

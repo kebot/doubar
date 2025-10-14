@@ -2,7 +2,7 @@ import { Command } from '@tauri-apps/plugin-shell'
 import { useEffect, useState } from 'react'
 import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
-// import { create } from 'zustand'
+import { Popover } from '../components/Popover'
 
 type ASWorkspace = { workspace: string }
 
@@ -55,17 +55,21 @@ function useWorkspaces(): [string, ASWorkspace[]] {
 
 function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boolean }) {
   return (
-    <div className={clsx(
-      'ml-2 flex',
-      'transition-all duration-300',
-      isFocused ? 'contrast-100' : 'contrast-50'
-    )}>
+    <div
+      className={clsx(
+        'ml-2 flex',
+        'transition-all duration-300',
+        isFocused ? 'contrast-100' : 'contrast-50'
+      )}
+    >
       {windows.map((window, index) => (
         <AppIcon
           key={window['window-id']}
           appName={window['app-name']}
           className={clsx(
-            'mr-2', 'w-4', 'h-4',
+            'mr-2',
+            'w-4',
+            'h-4',
             'transition-all duration-300',
             index > 0 && !isFocused && '-ml-5'
           )}
@@ -73,6 +77,20 @@ function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boole
       ))}
     </div>
   )
+}
+
+const workspaceNameMap = new Map()
+
+// you can rename your workspace
+workspaceNameMap.set('1', 'random')
+workspaceNameMap.set('2', 'doubar')
+workspaceNameMap.set('3', 'media')
+
+function workspaceIdToName(id: string): string {
+  if (workspaceNameMap.has(id)) {
+    return workspaceNameMap.get(id)
+  }
+  return id
 }
 
 function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
@@ -98,6 +116,7 @@ function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
   return (
     <span
       className={clsx(
+        'relative',
         'text-foreground',
         'shadow-none',
         'outline-none',
@@ -107,7 +126,12 @@ function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
         isFocused ? 'bg-background' : 'bg-black'
       )}
     >
-      {id}{' '}
+      <Popover
+        trigger={<>{workspaceIdToName(id)}</>}
+      >
+        <div className='text-foreground'>Popover content</div>
+      </Popover>
+
       <Windows windows={windows} isFocused={isFocused} />
     </span>
   )

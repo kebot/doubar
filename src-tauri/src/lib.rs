@@ -9,7 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_app_icon::get_app_icon,
-            commands::set_ignore_cursor_events::set_ignore_cursor_events
+            commands::set_window_behavior::set_window_behavior
         ])
         .setup(|app| {
             // https://developer.apple.com/documentation/appkit/nsapplication/activationpolicy-swift.enum/prohibited?language=objc
@@ -36,12 +36,11 @@ pub fn run() {
                 })?;
                 window.set_focusable(false)?;
                 window.set_visible_on_all_workspaces(true)?;
-                window.set_skip_taskbar(true)?;
 
-                window.set_always_on_top(true)?;
-
+                window.set_skip_taskbar(false)?;
+                // window.set_always_on_top(false)?;
                 // Make transparent areas click-through by default
-                window.set_ignore_cursor_events(true)?;
+                window.set_ignore_cursor_events(false)?;
 
                 window.show()?;
             }
