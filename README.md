@@ -1,4 +1,6 @@
-# Doubar
+# Doubar 🚧 🚧 🚧 
+
+⚠️ IT'S HIGHLY WIP, NOT RECOMMENDED FOR AVERAGE USER
 
 ## Get started
 
@@ -29,17 +31,7 @@ import { Command } from '@tauri-apps/plugin-shell'
 
 ## Config API
 
-- Native Config UI
-- yaml, json, toml, xml, etc..., 
-- JSX Project(deno) like Uebersicht
-    ```tsx
-    // ~/.config/doubar/App.tsx
-    import { Time } from 'doubar/component' 
-
-    function App () {
-        return <Time>
-    }
-    ```
+WIP
 
 ## Recommended IDE Setup
 
