@@ -1,5 +1,7 @@
 # Doubar 🚧 🚧 🚧 
 
+<img width="1512" height="982" alt="image" src="https://github.com/user-attachments/assets/242e6542-4043-47e4-89d3-fdb8a970e8a9" />
+
 ⚠️ IT'S HIGHLY WIP, NOT RECOMMENDED FOR AVERAGE USER
 
 ## Get started
