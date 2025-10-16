@@ -4,7 +4,7 @@ import clsx from 'clsx'
 import { AppIcon } from '../components/AppIcon'
 import { Popover } from '../components/Popover'
 import { Popover as BasePopover } from '@base-ui-components/react/popover'
-
+import { Pill } from '../components/Bar'
 
 type ASWorkspace = { workspace: string }
 
@@ -91,7 +91,7 @@ function workspaceIdToName(id: string): string {
   return id
 }
 
-const WorkspaceLabel = ({ id }: { id: string }) => {
+const WorkspaceLabel = ({ id, renameableWorkspace }: { id: string; renameableWorkspace: boolean }) => {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -107,6 +107,10 @@ const WorkspaceLabel = ({ id }: { id: string }) => {
     if (input) {
       workspaceNameMap.set(id, input.value)
     }
+  }
+
+  if (!renameableWorkspace) {
+    return <>{workspaceIdToName(id)}</>
   }
 
   return (
@@ -129,7 +133,7 @@ const WorkspaceLabel = ({ id }: { id: string }) => {
   )
 }
 
-function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
+function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocused: boolean; renameableWorkspace: boolean }) {
   const [windows, setWindows] = useState<ASWindow[]>([])
 
   useEffect(() => {
@@ -150,25 +154,14 @@ function Workspace({ id, isFocused }: { id: string; isFocused: boolean }) {
   }
 
   return (
-    <span
-      className={clsx(
-        'relative',
-        'text-foreground',
-        'shadow-none',
-        'outline-none',
-        'px-4',
-        'rounded-full',
-        'flex items-center',
-        isFocused ? 'bg-background' : 'bg-black'
-      )}
-    >
-      <WorkspaceLabel id={id} />
+    <Pill className={clsx('bg-background', isFocused ? 'opacity-100' : 'opacity-80')}>
+      <WorkspaceLabel id={id} renameableWorkspace={renameableWorkspace} />
       <Windows windows={windows} isFocused={isFocused} />
-    </span>
+    </Pill>
   )
 }
 
-export default function AeroSpace() {
+export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace: boolean }) {
   const [focusedWorkspace, workspaces] = useWorkspaces()
 
   return (
@@ -176,7 +169,7 @@ export default function AeroSpace() {
       {workspaces.map((workspace) => {
         const isFocused = workspace.workspace === focusedWorkspace
         return (
-          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} />
+          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} renameableWorkspace={renameableWorkspace} />
         )
       })}
     </div>
