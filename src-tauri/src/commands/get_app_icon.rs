@@ -69,9 +69,3 @@ pub fn get_app_icon(app_name: String) -> Result<String, String> {
 
     Err(format!("App '{}' not found", app_name))
 }
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-pub fn get_app_icon(_app_name: String) -> Result<String, String> {
-    Err("This command is only available on macOS".to_string())
-}

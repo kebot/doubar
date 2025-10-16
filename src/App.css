@@ -23,5 +23,14 @@
   --color-bright-white: #f7f5fb;
 
   /* design tokens */
-  --bar-height: 30px;
+  --bar-height: 20px;
+}
+
+body {
+  overflow: hidden;
+
+  /* remove the unknown border of the elements */
+  background-color: rgb(from var(--color-background) r g b / 0.05);
+  /* add padding to hide the border */
+  padding: 4px;
 }
