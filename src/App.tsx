@@ -3,14 +3,14 @@ import AeroSpace from './widgets/AeroSpace'
 import { TimeWidget } from './widgets/Time'
 import { Bar } from './components/Bar'
 import { Island } from './components/Island'
+import { SpotifyWidget } from './widgets/Spotify'
 
 function App() {
   return (
     <main className='w-full h-[100vh]'>
-      <Bar left={<AeroSpace renameableWorkspace={true} />} right={<TimeWidget />} />
-      <Island>
-        Dynamic Island Demo
-      </Island>
+      <Bar 
+        left={<AeroSpace renameableWorkspace={true} />} right={<TimeWidget />} />
+      <SpotifyWidget />
     </main>
   )
 }

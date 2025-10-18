@@ -50,25 +50,40 @@ export const Island = ({
   const ref = useRef<HTMLDivElement>(null)
   useOnClickOutside(ref as any, () => setShow(false))
 
-  return (
-    <div ref={ref}
-      onClick={() => setShow(!show)}
-      className={clsx(
-        'absolute text-foreground rounded-3xl p-2', show ? 'bg-[#000]' : 'bg-background/50',
-        'transition-all duration-300',
-      )}
+  return <div className={clsx(
+    'fixed', 'top-[4px]', 'left-[25%]', 'w-0', 'overflow-visible',
+    'text-foreground'
+  )}>
 
-      style={{
-        width: show ? (notchSize?.width || 0) + 100 : notchSize?.width,
-        height: show ? (notchSize?.height || 0) + 32 : notchSize?.height,
-        top: 0,
-        left: '50%',
-        transform: 'translateX(-50%)',
-      }}
-    >
-      <div className='absolute bottom-0 text-foreground rounded-lg p-2'>
-        {children}
-      </div>
-    </div>
-  )
+    <div className='whitespace-nowrap'>hello world</div>
+  </div>
+
+  // return (
+  //   <div
+  //     ref={ref}
+  //     onClick={() => setShow(!show)}
+  //     className={clsx(
+  //       'absolute text-foreground rounded-3xl p-2', show ? 'bg-[#000]' : 'bg-background/50',
+  //       'transition-all duration-300',
+  //       'overflow-hidden',
+  //     )}
+
+  //     style={{
+  //       minWidth: show ? (notchSize?.width || 0) + 100 : notchSize?.width,
+  //       height: show ? (notchSize?.height || 0) + 32 : notchSize?.height,
+  //       top: 4,
+  //       left: '50%',
+  //       transform: 'translateX(-50%)',
+  //     }}
+  //   >
+  //     {!show && <div>
+  //       <div 
+  //         className='inline-block'
+  //         style={{
+  //           width: notchSize?.width || 0,
+  //         }}
+  //       />
+  //     </div>}
+  //   </div>
+  // )
 }

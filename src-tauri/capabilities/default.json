@@ -22,6 +22,12 @@
             }
           ],
           "sidecar": false
+        },
+        {
+          "name": "osascript",
+          "cmd": "osascript",
+          "args": true,
+          "sidecar": false
         }
       ]
     }
