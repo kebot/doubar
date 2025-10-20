@@ -9,6 +9,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_app_icon::get_app_icon,
+            commands::get_safe_area_insets::get_safe_area_insets,
             commands::set_window_behavior::set_window_behavior
         ])
         .setup(|app| {

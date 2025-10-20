@@ -14,16 +14,7 @@ type ASWindow = {
   'window-title': string
 }
 
-type ASMonitor = {
-  'monitor-id': number
-  'monitor-name': string
-}
-
-type ASApp = {
-  'app-bundle-0id': string
-  'app-name': string
-  'app-pid': number
-}
+// Removed unused types for cleanliness
 
 async function aeroSpaceQuery<T>(query: string): Promise<T> {
   let result = await Command.create('exec-sh', [
@@ -133,7 +124,7 @@ const WorkspaceLabel = ({ id, renameableWorkspace }: { id: string; renameableWor
   )
 }
 
-function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocused: boolean; renameableWorkspace: boolean }) {
+function Workspace({ id, isFocused, renameableWorkspace, showEmpty }: { id: string; isFocused: boolean; renameableWorkspace: boolean; showEmpty?: boolean }) {
   const [windows, setWindows] = useState<ASWindow[]>([])
 
   useEffect(() => {
@@ -148,28 +139,63 @@ function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocus
 
   const hasWindows = windows.length > 0
 
-  // only show space if there's window
-  if (!hasWindows) {
-    return null
-  }
-
   return (
-    <Pill className={clsx('bg-background', isFocused ? 'opacity-100' : 'opacity-80')}>
+    <Pill className={clsx('bg-background', isFocused ? 'opacity-100' : 'opacity-80', !hasWindows && !showEmpty && 'hidden', !hasWindows && showEmpty && 'opacity-60') }>
       <WorkspaceLabel id={id} renameableWorkspace={renameableWorkspace} />
-      <Windows windows={windows} isFocused={isFocused} />
+      {hasWindows && <Windows windows={windows} isFocused={isFocused} />}
     </Pill>
   )
 }
 
-export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace: boolean }) {
+export default function AeroSpace({ 
+  renameableWorkspace,
+  maxWorkspaces,
+  startIndex = 0,
+  showEmpty = false,
+  autoSplitSide,
+  screenWidth,
+  notchWidth,
+  reservedRightWidth,
+}: {
+  renameableWorkspace: boolean
+  maxWorkspaces?: number
+  startIndex?: number
+  showEmpty?: boolean
+  autoSplitSide?: 'left' | 'right'
+  screenWidth?: number
+  notchWidth?: number
+  reservedRightWidth?: number
+}) {
   const [focusedWorkspace, workspaces] = useWorkspaces()
+
+  // Determine which workspaces to show
+  let displayWorkspaces: ASWorkspace[]
+  if (autoSplitSide) {
+    const n = workspaces.length
+    // Base available width excluding notch
+    const totalBarContentWidth = Math.max(0, (screenWidth || 0) - (notchWidth || 0))
+    const halfWidth = totalBarContentWidth > 0 ? totalBarContentWidth / 2 : 0
+    // Right side loses the reserved area for the time widget
+    const rightCapacity = Math.max(0, halfWidth - (reservedRightWidth || 0))
+    const leftCapacity = halfWidth
+    const denom = leftCapacity + rightCapacity
+    const leftShare = denom > 0 ? (leftCapacity / denom) : 0.5
+    const splitIndex = Math.min(n, Math.max(0, Math.round(n * leftShare)))
+    displayWorkspaces = autoSplitSide === 'left' ? workspaces.slice(0, splitIndex) : workspaces.slice(splitIndex)
+  } else {
+    displayWorkspaces = maxWorkspaces 
+      ? workspaces.slice(startIndex, startIndex + maxWorkspaces)
+      : workspaces.slice(startIndex)
+  }
+
+  // dev logs removed
 
   return (
     <div className='flex items-center gap-1'>
-      {workspaces.map((workspace) => {
+      {displayWorkspaces.map((workspace) => {
         const isFocused = workspace.workspace === focusedWorkspace
         return (
-          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} renameableWorkspace={renameableWorkspace} />
+          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} renameableWorkspace={renameableWorkspace} showEmpty={showEmpty} />
         )
       })}
     </div>
