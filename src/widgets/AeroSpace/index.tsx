@@ -1,59 +1,12 @@
-import { Command } from '@tauri-apps/plugin-shell'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import clsx from 'clsx'
-import { AppIcon } from '../components/AppIcon'
-import { Popover } from '../components/Popover'
+import { AppIcon } from '../../components/AppIcon'
+import { Popover } from '../../components/Popover'
 import { Popover as BasePopover } from '@base-ui-components/react/popover'
-import { Pill } from '../components/Bar'
+import { Pill } from '../../components/Bar'
+import { useAeroSpaceStore, type ASWindow } from './store'
 
-type ASWorkspace = { workspace: string }
-
-type ASWindow = {
-  'app-name': string
-  'window-id': number
-  'window-title': string
-}
-
-type ASMonitor = {
-  'monitor-id': number
-  'monitor-name': string
-}
-
-type ASApp = {
-  'app-bundle-0id': string
-  'app-name': string
-  'app-pid': number
-}
-
-async function aeroSpaceQuery<T>(query: string): Promise<T> {
-  let result = await Command.create('exec-sh', [
-    '-c',
-    `/opt/homebrew/bin/aerospace ${query} --json`,
-  ]).execute()
-
-  return JSON.parse(result.stdout) as T
-}
-
-function useWorkspaces(): [string, ASWorkspace[]] {
-  const [focusedWorkspace, setFocusedWorkspace] = useState<string>('')
-  const [workspaces, setWorkspaces] = useState<ASWorkspace[]>([])
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      aeroSpaceQuery<ASWorkspace[]>('list-workspaces --focused').then((workspaces) => {
-        setFocusedWorkspace(workspaces[0].workspace)
-      })
-
-      aeroSpaceQuery<ASWorkspace[]>('list-workspaces --monitor 1').then((workspaces) => {
-        setWorkspaces(workspaces)
-      })
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  return [focusedWorkspace, workspaces]
-}
+const EMPTY_WINDOWS: ASWindow[] = []
 
 function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boolean }) {
   return (
@@ -81,18 +34,10 @@ function Windows({ windows, isFocused }: { windows: ASWindow[]; isFocused: boole
   )
 }
 
-// TODO save it to persistent storage
-const workspaceNameMap = new Map()
-
-function workspaceIdToName(id: string): string {
-  if (workspaceNameMap.has(id)) {
-    return workspaceNameMap.get(id) || id
-  }
-  return id
-}
-
 const WorkspaceLabel = ({ id, renameableWorkspace }: { id: string; renameableWorkspace: boolean }) => {
   const inputRef = useRef<HTMLInputElement>(null)
+  const workspaceName = useAeroSpaceStore((state) => state.workspaceNameMap[id] || id)
+  const setWorkspaceName = useAeroSpaceStore((state) => state.setWorkspaceName)
 
   useEffect(() => {
     const input = inputRef.current
@@ -105,25 +50,25 @@ const WorkspaceLabel = ({ id, renameableWorkspace }: { id: string; renameableWor
     const input = inputRef.current
 
     if (input) {
-      workspaceNameMap.set(id, input.value)
+      setWorkspaceName(id, input.value)
     }
   }
 
   if (!renameableWorkspace) {
-    return <>{workspaceIdToName(id)}</>
+    return <>{workspaceName}</>
   }
 
   return (
-    <Popover trigger={<>{workspaceIdToName(id)}</>}>
+    <Popover trigger={<>{workspaceName}</>}>
       <div className='text-foreground'>
         <input
-          type='text' 
+          type='text'
           autoCorrect='off'
           autoCapitalize='off'
           autoComplete='off'
           className='text-foreground rounded-full px-2 border-1 cursor-text outline-none backdrop-blur-xs'
           ref={inputRef}
-          defaultValue={workspaceIdToName(id)} 
+          defaultValue={workspaceName}
         />
         <BasePopover.Close className='text-foreground rounded-full px-2 border-1 cursor-pointer outline-none backdrop-blur-xs ml-2' onClick={handleRename}>
           Rename
@@ -134,17 +79,7 @@ const WorkspaceLabel = ({ id, renameableWorkspace }: { id: string; renameableWor
 }
 
 function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocused: boolean; renameableWorkspace: boolean }) {
-  const [windows, setWindows] = useState<ASWindow[]>([])
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      aeroSpaceQuery<ASWindow[]>(`list-windows --workspace ${id}`).then((windows) => {
-        setWindows(windows)
-      })
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [id])
+  const windows = useAeroSpaceStore((state) => state.windowsMap[id] || EMPTY_WINDOWS)
 
   const hasWindows = windows.length > 0
 
@@ -162,7 +97,23 @@ function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocus
 }
 
 export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace: boolean }) {
-  const [focusedWorkspace, workspaces] = useWorkspaces()
+  const focusedWorkspace = useAeroSpaceStore((state) => state.focusedWorkspace)
+  const workspaces = useAeroSpaceStore((state) => state.workspaces)
+  const fetchWorkspaces = useAeroSpaceStore((state) => state.fetchWorkspaces)
+
+  useEffect(() => {
+    // Initial fetch
+    fetchWorkspaces()
+
+    // Start polling
+    const interval = setInterval(() => {
+      fetchWorkspaces()
+    }, 1000)
+
+    return () => {
+      clearInterval(interval)
+    }
+  }, [fetchWorkspaces])
 
   return (
     <div className='flex items-center gap-1'>
