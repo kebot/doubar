@@ -11,7 +11,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
 
@@ -32,7 +32,7 @@ jobs:
         run: bun tauri build --target universal-apple-darwin
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: doubar-macos
           path: |
