@@ -5,6 +5,7 @@ import { Popover } from '../../components/Popover'
 import { Popover as BasePopover } from '@base-ui-components/react/popover'
 import { Pill } from '../../components/Bar'
 import { useAeroSpaceStore, type ASWindow } from './store'
+import { useScreen } from '../../context/ScreenContext'
 
 const EMPTY_WINDOWS: ASWindow[] = []
 
@@ -97,17 +98,18 @@ function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocus
 }
 
 export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace: boolean }) {
+  const screen = useScreen()
   const focusedWorkspace = useAeroSpaceStore((state) => state.focusedWorkspace)
   const workspaces = useAeroSpaceStore((state) => state.workspaces)
   const fetchWorkspaces = useAeroSpaceStore((state) => state.fetchWorkspaces)
 
   useEffect(() => {
     // Initial fetch
-    fetchWorkspaces()
+    fetchWorkspaces(screen.screenIndex)
 
     // Start polling
     const interval = setInterval(() => {
-      fetchWorkspaces()
+      fetchWorkspaces(screen.screenIndex)
     }, 1000)
 
     return () => {
@@ -117,6 +119,7 @@ export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace
 
   return (
     <div className='flex items-center gap-1'>
+      {workspaces.length}
       {workspaces.map((workspace) => {
         const isFocused = workspace.workspace === focusedWorkspace
         return (
