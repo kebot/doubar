@@ -10,27 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "doubar",
-        "width": 1920,
-        "height": 60,
-        "resizable": false,
-        "visible": true,
-        "fullscreen": false,
-        "alwaysOnTop": false,
-        "alwaysOnBottom": true,
-        "skipTaskbar": true,
-        "hiddenTitle": true,
-        "focusable": false,
-        "visibleOnAllWorkspaces": true,
-        "x": 0,
-        "y": 0,
-        "transparent": true,
-        "decorations": false,
-        "titleBarStyle": "Overlay"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     },

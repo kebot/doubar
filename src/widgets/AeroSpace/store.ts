@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { Command } from '@tauri-apps/plugin-shell'
 
-export type ASWorkspace = { workspace: string }
+export type ASWorkspace = { monitorId: number; workspace: string }
 
 export type ASWindow = {
   'app-name': string
@@ -29,6 +29,7 @@ async function aeroSpaceQuery<T>(query: string): Promise<T> {
   return JSON.parse(result.stdout) as T
 }
 
+// Check https://nikitabobko.github.io/AeroSpace/guide for concepts of AeroSpace
 interface AeroSpaceStore {
   // State
   focusedWorkspace: string
@@ -43,7 +44,7 @@ interface AeroSpaceStore {
   setWorkspaceName: (id: string, name: string) => void
 
   // Fetch methods
-  fetchWorkspaces: () => Promise<void>
+  fetchWorkspaces: (monitorId: number) => Promise<void>
   fetchWindows: (workspaceId: string) => Promise<void>
 }
 
@@ -69,17 +70,20 @@ export const useAeroSpaceStore = create<AeroSpaceStore>((set, get) => ({
       workspaceNameMap: { ...state.workspaceNameMap, [id]: name },
     })),
 
-  // Fetch methods
-  fetchWorkspaces: async () => {
+  // fetch workspaces of the current screen
+  fetchWorkspaces: async (monitorId: number) => {
     try {
       const [focused, allWorkspaces] = await Promise.all([
-        aeroSpaceQuery<ASWorkspace[]>('list-workspaces --focused'),
-        aeroSpaceQuery<ASWorkspace[]>('list-workspaces --monitor 1'),
+        aeroSpaceQuery<Omit<ASWorkspace, 'monitorId'>[]>('list-workspaces --focused'),
+        aeroSpaceQuery<Omit<ASWorkspace, 'monitorId'>[]>(`list-workspaces --monitor ${monitorId}`),
       ])
 
       set({
         focusedWorkspace: focused[0]?.workspace || '',
-        workspaces: allWorkspaces,
+        workspaces: allWorkspaces.map((w) => ({
+          ...w,
+          monitorId,
+        })),
       })
 
       // Fetch windows for all workspaces
@@ -91,6 +95,7 @@ export const useAeroSpaceStore = create<AeroSpaceStore>((set, get) => ({
     }
   },
 
+  // fetch windows of a given workspace
   fetchWindows: async (workspaceId) => {
     try {
       const windows = await aeroSpaceQuery<ASWindow[]>(

@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for main and per-monitor bar webviews",
   "windows": [
-    "main"
+    "main",
+    "bar_*"
   ],
   "permissions": [
     "core:default",

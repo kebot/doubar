@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { ScreenProvider } from './context/ScreenContext'
 
 const DevMain = React.lazy(() => import('./dev/DevMain').then(module => ({ default: module.DevMain })))
 
@@ -11,7 +12,9 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 if (isTauri) {
   ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
     <React.StrictMode>
-      <App />
+      <ScreenProvider>
+        <App />
+      </ScreenProvider>
     </React.StrictMode>
   )
 } else {
