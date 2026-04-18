@@ -97,6 +97,14 @@ function Workspace({ id, isFocused, renameableWorkspace }: { id: string; isFocus
   )
 }
 
+// order the workspace by the order of the keyboard
+const workspaceOrder = (a: string) => [
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+  'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\\',
+  'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'',
+  'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/',
+].indexOf(a.toLowerCase())
+
 export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace: boolean }) {
   const screen = useScreen()
   const focusedWorkspace = useAeroSpaceStore((state) => state.focusedWorkspace)
@@ -105,11 +113,11 @@ export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace
 
   useEffect(() => {
     // Initial fetch
-    fetchWorkspaces(screen.screenIndex)
+    fetchWorkspaces(screen.aerospace?.monitorId || 0)
 
     // Start polling
     const interval = setInterval(() => {
-      fetchWorkspaces(screen.screenIndex)
+      fetchWorkspaces(screen.aerospace?.monitorId || 0)
     }, 1000)
 
     return () => {
@@ -119,13 +127,17 @@ export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace
 
   return (
     <div className='flex items-center gap-1'>
-      {workspaces.length}
-      {workspaces.map((workspace) => {
-        const isFocused = workspace.workspace === focusedWorkspace
-        return (
-          <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} renameableWorkspace={renameableWorkspace} />
+      {workspaces
+        // sort the workspaces by the order of the keyboard
+        .sort((a, b) =>
+          workspaceOrder(a.workspace) - workspaceOrder(b.workspace)
         )
-      })}
+        .map((workspace) => {
+          const isFocused = workspace.workspace === focusedWorkspace
+          return (
+            <Workspace key={workspace.workspace} id={workspace.workspace} isFocused={isFocused} renameableWorkspace={renameableWorkspace} />
+          )
+        })}
     </div>
   )
 }
