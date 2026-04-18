@@ -1,8 +1,8 @@
 .PHONY: install dev
 
 dev:
-	deno task tauri dev
+	bun tauri dev
 
 install:
-	deno install
+	bun install
 
