@@ -53,6 +53,19 @@ Command.create('exec-sh', ['-c', `aerospace ... --json`]).execute()
 
 Tailwind CSS v4 (via `@tailwindcss/vite`). CSS variables `--bar-height` and `--background`/`--foreground` control theming. The `Pill` component is the atomic UI unit for bar items.
 
+## Testing
+
+Write tests before adding or modifying features (TDD). Run tests with:
+
+```bash
+bun vitest run      # single run
+bun vitest          # watch mode
+```
+
+- Place test files co-located with the source file: `Foo.test.tsx` next to `Foo.tsx`
+- Mock Tauri APIs with `vi.mock('@tauri-apps/api/...')` — follow the pattern in `src/context/ScreenContext.test.tsx`
+- All new widgets and context providers must have a corresponding test file before the feature is considered done
+
 ## macOS-specific constraints
 
 - The window uses `macOSPrivateApi: true` in `tauri.conf.json` for `alwaysOnBottom` support.
