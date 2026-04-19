@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import clsx from 'clsx'
+import { listen } from '@tauri-apps/api/event'
 import { AppIcon } from '../../components/AppIcon'
 import { Popover } from '../../components/Popover'
 import { Popover as BasePopover } from '@base-ui-components/react/popover'
@@ -112,18 +113,24 @@ export default function AeroSpace({ renameableWorkspace }: { renameableWorkspace
   const fetchWorkspaces = useAeroSpaceStore((state) => state.fetchWorkspaces)
 
   useEffect(() => {
-    // Initial fetch
-    fetchWorkspaces(screen.aerospace?.monitorId || 0)
+    const monitorId = screen.aerospace?.monitorId || 0
 
-    // Start polling
-    const interval = setInterval(() => {
-      fetchWorkspaces(screen.aerospace?.monitorId || 0)
-    }, 1000)
+    // initial fetch
+    fetchWorkspaces(monitorId)
+
+    // Poll as fallback (catches changes AeroSpace doesn't emit)
+    const interval = setInterval(() => fetchWorkspaces(monitorId), 10_000)
+
+    // Immediate refresh on AeroSpace focus/workspace events
+    const unlisten = listen<Record<string, string>>('aerospace', () => {
+      fetchWorkspaces(monitorId)
+    })
 
     return () => {
       clearInterval(interval)
+      unlisten.then((fn) => fn())
     }
-  }, [fetchWorkspaces])
+  }, [fetchWorkspaces, screen.aerospace?.monitorId])
 
   return (
     <div className='flex items-center gap-1'>

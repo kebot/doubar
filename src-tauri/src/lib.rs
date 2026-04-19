@@ -2,7 +2,7 @@ mod commands;
 
 use std::collections::HashSet;
 use std::sync::Mutex;
-use tauri::{ActivationPolicy, AppHandle, Manager, Monitor, WebviewUrl, WebviewWindowBuilder};
+use tauri::{ActivationPolicy, AppHandle, Emitter, Manager, Monitor, WebviewUrl, WebviewWindowBuilder};
 
 pub struct ScreenState(pub Mutex<HashSet<usize>>);
 
@@ -120,6 +120,41 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // doubar emit <event_name> [--key value ...]
+            let subcmd = argv.get(1).map(|s| s.as_str());
+            match subcmd {
+                Some("emit") => {
+                    let event_name = match argv.get(2).filter(|s| !s.is_empty()) {
+                        Some(n) => n,
+                        None => {
+                            eprintln!("[doubar] emit: missing event name");
+                            return;
+                        }
+                    };
+                    let mut params = serde_json::Map::new();
+                    for arg in argv.iter().skip(3) {
+                        if let Some((k, v)) = arg.split_once('=') {
+                            let key = k.trim_start_matches('-').to_string();
+                            if key.is_empty() {
+                                eprintln!("[doubar] emit: skipping malformed arg '{}'", arg);
+                                continue;
+                            }
+                            params.insert(key, serde_json::Value::String(v.to_string()));
+                        } else {
+                            eprintln!("[doubar] emit: skipping arg '{}' (expected key=value)", arg);
+                        }
+                    }
+                    let payload = serde_json::Value::Object(params);
+                    eprintln!("[doubar] emit '{}' payload={}", event_name, payload);
+                    let _ = app.emit(event_name, payload);
+                }
+                Some(unknown) => {
+                    eprintln!("[doubar] unknown subcommand '{}', ignoring", unknown);
+                }
+                None => {}
+            }
+        }))
         .manage(ScreenState(Mutex::new(HashSet::new())))
         .invoke_handler(tauri::generate_handler![
             commands::get_app_icon::get_app_icon,
