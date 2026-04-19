@@ -22,4 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# AI Coding Skills
 .claude/settings.local.json
+.claude/skills
+.agents/skills
+
