@@ -2,6 +2,7 @@
 
 dev:
 	@if [ -n "$$TMUX" ] || [ -n "$$ZELLIJ" ]; then echo "Error: do not run 'make dev' inside tmux/zellij — Tauri needs a native macOS terminal session."; exit 1; fi
+	@killall doubar 2>/dev/null || true
 	bun tauri dev
 
 build:

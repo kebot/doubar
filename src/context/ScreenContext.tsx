@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { getCurrentWindow, currentMonitor, primaryMonitor } from '@tauri-apps/api/window'
+import { getCurrentWindow, currentMonitor, primaryMonitor, availableMonitors } from '@tauri-apps/api/window'
 import type { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi'
 import { Command } from '@tauri-apps/plugin-shell'
 
@@ -71,14 +71,17 @@ async function buildScreenInfo(): Promise<ScreenInfo> {
 
   let aerospace: AeroSpaceMonitorInfo | null = null
   try {
-    const asList = await fetchAeroSpaceMonitors()
-    // Match by name substring — AeroSpace and macOS may differ slightly
-    aerospace =
-      asList.find(
-        (a) =>
-          monitor.name &&
-          (a.monitorName.includes(monitor.name) || monitor.name.includes(a.monitorName))
-      ) ?? asList[screenIndex] ?? null
+    // AeroSpace assigns monitor-id by left-to-right physical position, 1-based
+    const allMonitors = await availableMonitors()
+    const sorted = [...allMonitors].sort((a, b) => a.position.x - b.position.x)
+    const rank = sorted.findIndex(
+      (m) => m.position.x === monitor.position.x && m.position.y === monitor.position.y
+    )
+    if (rank !== -1) {
+      const monitorId = rank + 1
+      const asList = await fetchAeroSpaceMonitors()
+      aerospace = asList.find((a) => a.monitorId === monitorId) ?? null
+    }
   } catch {
     // AeroSpace not running or not installed — silently skip
   }
