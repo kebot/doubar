@@ -11,7 +11,7 @@ Doubar is a macOS menu bar replacement built with Tauri v2 + React + TypeScript.
 ```bash
 make dev          # start Tauri dev server (hot reload)
 make install      # install JS dependencies with bun
-bun tauri build --target universal-apple-darwin  # production build (arm64 + x86_64)
+make build  # production build (aarch64)
 ```
 
 The Vite dev server is hardcoded to port 1420 (`strictPort: true`).
