@@ -56,5 +56,6 @@ Tailwind CSS v4 (via `@tailwindcss/vite`). CSS variables `--bar-height` and `--b
 ## macOS-specific constraints
 
 - The window uses `macOSPrivateApi: true` in `tauri.conf.json` for `alwaysOnBottom` support.
+- Bar windows must be created with `setCanHide(false)` (see `order_front_regardless` in `lib.rs`). Depending on what launches doubar, the process can end up with AppKit's application-hidden flag set (`NSApp.isHidden == true`), which hides every window the app owns while leaving each window's frame, level and Space membership intact — the bar is built correctly and simply never composited. `setCanHide(false)` exempts the bar from application-level hiding. `orderFront:` is also a no-op for this app, since `ActivationPolicy::Prohibited` means it is never the active application; use `orderFrontRegardless`.
 - `get_app_icon.rs` is `#[cfg(target_os = "macos")]` only — do not call it on other platforms.
 - AeroSpace queries hardcode `/opt/homebrew/bin/aerospace` — requires Homebrew on Apple Silicon.

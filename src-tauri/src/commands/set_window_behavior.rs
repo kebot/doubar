@@ -47,6 +47,8 @@ pub fn set_window_behavior(
         if let Some(true) = recreate {
             window.hide().map_err(|e| e.to_string())?;
             window.show().map_err(|e| e.to_string())?;
+            // show() alone is not enough for an inactive (Prohibited) app
+            crate::order_front_regardless(window);
         }
     }
 
