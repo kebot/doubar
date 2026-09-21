@@ -2,14 +2,14 @@
 
 dev:
 	@if [ -n "$$TMUX" ] || [ -n "$$ZELLIJ" ]; then echo "Error: do not run 'make dev' inside tmux/zellij — Tauri needs a native macOS terminal session."; exit 1; fi
-	@killall doubar 2>/dev/null || true
-	bun tauri dev
+	@./scripts/dev.sh
 
 build:
 	bun tauri build --target aarch64-apple-darwin --no-bundle
 
 # link the binary to $PATH
-link:
+link: build
+	@mkdir -p "$(HOME)/.local/bin"
 	ln -sf "$(PWD)/src-tauri/target/aarch64-apple-darwin/release/doubar" "$(HOME)/.local/bin/doubar"
 
 # build the full .app + .dmg if needed (currenctly have permission issues)
