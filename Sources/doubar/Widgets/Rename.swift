@@ -54,10 +54,8 @@ final class Rename {
     /// Open the field from a script, anchored to the bar of the workspace's
     /// monitor (`doubar emit rename workspace=<name>`).
     func begin(_ workspace: String) {
-        let monitorId = AeroSpace.shared.windows.first { $0.workspace == workspace }?.monitorId ?? 1
-        guard let screen = NSScreen.forAeroSpaceMonitor(monitorId) ?? NSScreen.main else { return }
-        let f = screen.frame
-        begin(workspace, below: NSRect(x: f.minX + 10, y: f.maxY - BarWindow.height + 4, width: 0, height: 0))
+        guard let (anchor, _) = NSScreen.barAnchor(for: workspace) else { return }
+        begin(workspace, below: anchor)
     }
 
     /// Close the field without saving.
@@ -67,23 +65,10 @@ final class Rename {
     }
 }
 
-private final class RenamePanel: NSPanel {
-    private let host = NSHostingView(rootView: AnyView(EmptyView()))
-
-    init() {
-        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isReleasedWhenClosed = false
-        level = .popUpMenu
-        collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle, .fullScreenAuxiliary]
-        canHide = false
-        contentView = host
-    }
-
+private final class RenamePanel: PopupPanel {
+    // The one popup that takes the keyboard. Being a non-activating panel,
+    // it does so without activating doubar.
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
 
     /// Clicking anywhere else cancels, like a popover.
     override func resignKey() {
@@ -93,12 +78,10 @@ private final class RenamePanel: NSPanel {
 
     func show(_ view: RenameView, below anchor: NSRect) {
         // A fresh identity each time, so the field resets and refocuses.
-        host.rootView = AnyView(view.id(UUID()))
-        let size = host.fittingSize
-        let bounds = NSScreen.screens.first { $0.frame.intersects(anchor.insetBy(dx: -1, dy: -1)) }?.frame ?? anchor
-        let x = min(max(anchor.minX, bounds.minX + 8), bounds.maxX - size.width - 8)
-        setFrame(NSRect(x: x, y: anchor.minY - 6 - size.height, width: size.width, height: size.height), display: true)
-        makeKeyAndOrderFront(nil)
+        setContent(view.id(UUID()), below: anchor, gap: 6)
+        // The app is never active, so order front regardless, then take key.
+        orderFrontRegardless()
+        makeKey()
     }
 }
 

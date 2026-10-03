@@ -14,43 +14,83 @@ enum WindowLayout {
     private static let unit = CGRect(x: 0, y: 0, width: 1, height: 1)
 
     static func record(_ windows: [AeroSpace.Window]) {
-        guard !windows.isEmpty,
-              let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]]
-        else { return }
-
-        var bounds: [Int: CGRect] = [:]
-        for w in info {
-            guard let n = w[kCGWindowNumber as String] as? Int,
-                  let b = w[kCGWindowBounds as String],
-                  let r = CGRect(dictionaryRepresentation: b as! CFDictionary)
-            else { continue }
-            bounds[n] = r
-        }
-
+        guard !windows.isEmpty else { return }
+        let bounds = windowBounds(onScreenOnly: true)
         for w in windows {
-            guard let r = bounds[w.windowId],
-                  let display = NSScreen.forAeroSpaceMonitor(w.monitorId)?.displayID
-            else { continue }
-            let d = CGDisplayBounds(display)
+            guard let r = bounds[w.windowId], let d = displayBounds(w.monitorId) else { continue }
             frames[w.windowId] = CGRect(
                 x: (r.minX - d.minX) / d.width, y: (r.minY - d.minY) / d.height,
                 width: r.width / d.width, height: r.height / d.height)
         }
     }
 
-    /// A unit-space rect (top-left origin) per window: their remembered
-    /// places, or an even grid when any of them has never been seen.
-    static func layout(_ windows: [AeroSpace.Window]) -> [CGRect] {
+    /// Forget windows that no longer exist.
+    static func prune(keeping ids: Set<Int>) {
+        frames = frames.filter { ids.contains($0.key) }
+    }
+
+    /// A unit-space rect (top-left origin) per window, for a workspace on
+    /// `monitorId`: their remembered places when all are known, otherwise a
+    /// best guess.
+    static func layout(_ windows: [AeroSpace.Window], monitorId: Int) -> [CGRect] {
         let known = windows.compactMap { frames[$0.windowId]?.intersection(unit) }
         if known.count == windows.count, known.allSatisfy({ !$0.isEmpty }) { return known }
 
-        let cols = max(1, Int(Double(windows.count).squareRoot().rounded(.up)))
-        let rows = max(1, (windows.count + cols - 1) / cols)
+        // Not all seen on screen yet. A parked window keeps its real size,
+        // so lay the windows out at that size: side by side, as AeroSpace's
+        // default horizontal tiling does, else stacked, else a grid.
+        if let d = displayBounds(monitorId) {
+            let bounds = windowBounds(onScreenOnly: false)
+            let sizes = windows.compactMap { w in
+                bounds[w.windowId].map { CGSize(width: min($0.width / d.width, 1), height: min($0.height / d.height, 1)) }
+            }
+            if sizes.count == windows.count, let packed = pack(sizes, horizontal: true) ?? pack(sizes, horizontal: false) {
+                return packed
+            }
+        }
+        return grid(windows.count)
+    }
+
+    /// Sizes laid end to end along one axis and centred, or nil if they
+    /// don't fit.
+    private static func pack(_ sizes: [CGSize], horizontal: Bool) -> [CGRect]? {
+        let total = sizes.reduce(0) { $0 + (horizontal ? $1.width : $1.height) }
+        guard total <= 1.02 else { return nil }
+        var offset = max(0, (1 - total) / 2)
+        return sizes.map { s in
+            defer { offset += horizontal ? s.width : s.height }
+            return horizontal
+                ? CGRect(x: offset, y: (1 - s.height) / 2, width: s.width, height: s.height)
+                : CGRect(x: (1 - s.width) / 2, y: offset, width: s.width, height: s.height)
+        }
+    }
+
+    private static func grid(_ count: Int) -> [CGRect] {
+        let cols = max(1, Int(Double(count).squareRoot().rounded(.up)))
+        let rows = max(1, (count + cols - 1) / cols)
         let w = 1 / CGFloat(cols), h = 1 / CGFloat(rows)
-        return windows.indices.map { i in
+        return (0..<count).map { i in
             CGRect(x: CGFloat(i % cols) * w, y: CGFloat(i / cols) * h, width: w, height: h)
         }
+    }
+
+    private static func displayBounds(_ monitorId: Int) -> CGRect? {
+        NSScreen.forAeroSpaceMonitor(monitorId)?.displayID.map(CGDisplayBounds)
+    }
+
+    /// Window bounds by window id, in global top-left coordinates.
+    private static func windowBounds(onScreenOnly: Bool) -> [Int: CGRect] {
+        let options: CGWindowListOption = onScreenOnly ? [.optionOnScreenOnly, .excludeDesktopElements] : [.optionAll]
+        guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [:] }
+        var bounds: [Int: CGRect] = [:]
+        for w in info {
+            guard let n = w[kCGWindowNumber as String] as? Int,
+                  let b = w[kCGWindowBounds as String] as? NSDictionary,
+                  let r = CGRect(dictionaryRepresentation: b as CFDictionary)
+            else { continue }
+            bounds[n] = r
+        }
+        return bounds
     }
 }
 
@@ -99,8 +139,10 @@ final class Peek: ObservableObject {
     private var panelHovered = false
     private var askedForPermission = false
 
-    /// Longest side of the miniature screen.
+    /// Longest side of the miniature screen, at most; it shrinks to fit.
     private static let miniature: CGFloat = 480
+    /// The panel around the miniature: padding, title and footer.
+    private static let chrome = CGSize(width: 40, height: 110)
 
     func pillHover(_ name: String, monitorId: Int, anchor: NSRect, hovering: Bool) {
         // Pills under a dragged icon are drop targets, not peeks.
@@ -111,7 +153,9 @@ final class Peek: ObservableObject {
             return
         }
         hideWork?.cancel()
-        guard name != AeroSpace.shared.focusedWorkspace else {
+        // Nothing to preview for a workspace that is already on screen.
+        let aerospace = AeroSpace.shared
+        guard name != aerospace.focusedWorkspace, !aerospace.visibleWorkspaces.contains(name) else {
             hide()
             return
         }
@@ -127,15 +171,10 @@ final class Peek: ObservableObject {
     /// workspace=<name>`), anchored to the bar of its monitor; nil closes it.
     /// It closes itself after a few seconds unless the pointer moves onto it.
     func peek(_ name: String?) {
-        guard let name,
-              let monitorId = AeroSpace.shared.windows.first(where: { $0.workspace == name })?.monitorId,
-              let screen = NSScreen.forAeroSpaceMonitor(monitorId)
-        else {
+        guard let name, let (anchor, monitorId) = NSScreen.barAnchor(for: name) else {
             hide()
             return
         }
-        let f = screen.frame
-        let anchor = NSRect(x: f.minX + 10, y: f.maxY - BarWindow.height + 4, width: 0, height: 0)
         show(name, monitorId: monitorId, anchor: anchor)
         scheduleHide(after: 3)
     }
@@ -148,6 +187,13 @@ final class Peek: ObservableObject {
     func jump(to window: AeroSpace.Window) {
         hide()
         AeroSpace.shared.focus(window: window)
+    }
+
+    /// Forget captures of windows that no longer exist.
+    func prune(keeping ids: Set<Int>) {
+        if images.keys.contains(where: { !ids.contains($0) }) {
+            images = images.filter { ids.contains($0.key) }
+        }
     }
 
     func hide() {
@@ -179,16 +225,14 @@ final class Peek: ObservableObject {
             CGRequestScreenCaptureAccess()
         }
 
-        let aspect = screen.frame.width / screen.frame.height
-        let size = aspect >= 1
-            ? CGSize(width: Self.miniature, height: Self.miniature / aspect)
-            : CGSize(width: Self.miniature * aspect, height: Self.miniature)
-
         let panel = self.panel ?? PeekPanel()
         self.panel = panel
         panel.show(
-            PeekView(name: name, windows: windows, rects: WindowLayout.layout(windows), size: size),
-            below: anchor, on: screen)
+            PeekView(
+                name: name, windows: windows,
+                rects: WindowLayout.layout(windows, monitorId: monitorId),
+                size: Self.miniatureSize(for: screen, below: anchor)),
+            below: anchor)
         workspace = name
 
         // Refresh the miniature while it is open, so it is a live view.
@@ -200,6 +244,23 @@ final class Peek: ObservableObject {
         }
     }
 
+    /// The display's shape at up to `miniature` on its longest side, shrunk
+    /// so the whole panel fits between the anchor and the bottom of the
+    /// screen, and across it.
+    private static func miniatureSize(for screen: NSScreen, below anchor: NSRect) -> CGSize {
+        let f = screen.frame
+        let aspect = f.width / f.height
+        var size = aspect >= 1
+            ? CGSize(width: miniature, height: miniature / aspect)
+            : CGSize(width: miniature * aspect, height: miniature)
+        let room = CGSize(
+            width: f.width - 16 - chrome.width,
+            height: anchor.minY - 8 - (f.minY + 8) - chrome.height)
+        let scale = min(1, room.width / size.width, room.height / size.height)
+        if scale < 1 { size = CGSize(width: size.width * scale, height: size.height * scale) }
+        return size
+    }
+
     private func capture(_ ids: [Int]) {
         Task {
             let fresh = await Thumbnails.capture(ids, maxPixels: Self.miniature * 2)
@@ -209,46 +270,15 @@ final class Peek: ObservableObject {
     }
 }
 
-private final class PeekPanel: NSPanel {
-    private let host = PeekHostingView(rootView: AnyView(EmptyView()))
-
-    init() {
-        super.init(
-            contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isReleasedWhenClosed = false
-        acceptsMouseMovedEvents = true
-        level = .popUpMenu
-        collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle, .fullScreenAuxiliary]
-        canHide = false
-        contentView = host
-    }
-
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-
-    func show(_ view: PeekView, below anchor: NSRect, on screen: NSScreen) {
-        host.rootView = AnyView(view)
-        let size = host.fittingSize
-        let bounds = screen.frame
-        let x = min(max(anchor.minX - 20, bounds.minX + 8), bounds.maxX - size.width - 8)
-        let frame = NSRect(x: x, y: anchor.minY - 8 - size.height, width: size.width, height: size.height)
-        setFrame(frame, display: true)
-        invalidateShadow()
-
+private final class PeekPanel: PopupPanel {
+    func show(_ view: PeekView, below anchor: NSRect) {
+        setContent(view, below: anchor, gap: 8, inset: 20)
         if !isVisible {
             alphaValue = 0
             orderFrontRegardless()
             NSAnimationContext.runAnimationGroup { $0.duration = 0.15; animator().alphaValue = 1 }
         }
     }
-}
-
-private final class PeekHostingView: NSHostingView<AnyView> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 struct PeekView: View {

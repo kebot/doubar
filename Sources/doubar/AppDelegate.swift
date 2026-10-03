@@ -73,13 +73,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let byPosition = NSScreen.byAeroSpaceMonitor
         var seen = Set<CGDirectDisplayID>()
 
         for screen in screens {
             guard let id = screen.displayID else { continue }
             seen.insert(id)
-            let monitorId = (byPosition.firstIndex(of: screen) ?? 0) + 1
+            let monitorId = screen.aeroSpaceMonitorId
             if let bar = bars[id] {
                 bar.place(on: screen, monitorId: monitorId)
             } else {
@@ -101,9 +100,18 @@ extension NSScreen {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 
-    /// Screens in AeroSpace monitor order: 1-based, left to right.
-    static var byAeroSpaceMonitor: [NSScreen] {
-        screens.sorted { $0.frame.minX < $1.frame.minX }
+    // AeroSpace numbers monitors 1-based by position: left to right, then
+    // top to bottom for displays that share a left edge. These two are the
+    // only places that mapping lives.
+
+    private static var byAeroSpaceMonitor: [NSScreen] {
+        screens.sorted { a, b in
+            a.frame.minX != b.frame.minX ? a.frame.minX < b.frame.minX : a.frame.maxY > b.frame.maxY
+        }
+    }
+
+    var aeroSpaceMonitorId: Int {
+        (Self.byAeroSpaceMonitor.firstIndex(of: self) ?? 0) + 1
     }
 
     static func forAeroSpaceMonitor(_ monitorId: Int) -> NSScreen? {

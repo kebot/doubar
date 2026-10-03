@@ -46,6 +46,18 @@ struct Pill<Content: View>: View {
     }
 }
 
+extension View {
+    /// Call `action` with this view's frame in its window (SwiftUI's
+    /// top-left space) now and whenever it changes.
+    func onWindowFrameChange(_ action: @escaping (CGRect) -> Void) -> some View {
+        background(GeometryReader { geo in
+            Color.clear
+                .onAppear { action(geo.frame(in: .global)) }
+                .onChange(of: geo.frame(in: .global)) { _, frame in action(frame) }
+        })
+    }
+}
+
 extension Color {
     init(hex: UInt32) {
         self.init(

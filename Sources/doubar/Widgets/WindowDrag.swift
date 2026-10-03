@@ -7,41 +7,30 @@ import SwiftUI
 // don't start reliably from a window of an app that is never active. AppKit
 // keeps sending mouse-dragged events to the window the press began in, even
 // outside it, so the drag still reaches the bars of other displays. Drop
-// targets are found by hit-testing the cursor against every pill's screen
-// frame.
+// targets are found by hit-testing the cursor against PillFrames.
 
 @MainActor
 final class WindowDrag: ObservableObject {
     static let shared = WindowDrag()
 
-    struct Target: Hashable {
-        let workspace: String
-        let monitorId: Int
-    }
-
     /// The window being dragged, and the pill under the cursor.
     @Published private(set) var window: AeroSpace.Window?
-    @Published private(set) var target: Target?
+    @Published private(set) var target: WorkspaceSlot?
 
-    private var targets: [Target: NSRect] = [:]
     private var ghost: DragGhost?
-
-    /// Pills report where they are on screen, so drops can find them.
-    func register(_ target: Target, frame: NSRect) { targets[target] = frame }
-    func unregister(_ target: Target) { targets[target] = nil }
 
     func update(_ window: AeroSpace.Window) {
         let mouse = NSEvent.mouseLocation
         if self.window == nil {
             self.window = window
             Peek.shared.hide()
-            log("drag \(window.appName) (\(window.windowId)) from \(window.workspace), \(targets.count) targets")
+            log("drag \(window.appName) (\(window.windowId)) from \(window.workspace)")
         }
         let ghost = self.ghost ?? DragGhost()
         self.ghost = ghost
         ghost.show(window.appName, at: mouse)
 
-        let hit = targets.first { $0.value.insetBy(dx: -2, dy: -6).contains(mouse) }?.key
+        let hit = PillFrames.slot(at: mouse)
         if hit != target { target = hit }
     }
 
@@ -55,29 +44,19 @@ final class WindowDrag: ObservableObject {
         target = nil
     }
 
-    func isTarget(_ workspace: String, on monitorId: Int) -> Bool {
-        window != nil && target == Target(workspace: workspace, monitorId: monitorId)
+    func isTarget(_ slot: WorkspaceSlot) -> Bool {
+        window != nil && target == slot
     }
 }
 
 /// The icon that follows the cursor during a drag.
-private final class DragGhost: NSPanel {
-    private let host = NSHostingView(rootView: AnyView(EmptyView()))
+private final class DragGhost: PopupPanel {
     private var appName = ""
     private static let size: CGFloat = 32
 
     init() {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.size, height: Self.size),
-            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
+        super.init(size: NSSize(width: Self.size, height: Self.size))
         ignoresMouseEvents = true
-        level = .popUpMenu
-        collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle, .fullScreenAuxiliary]
-        canHide = false
-        contentView = host
     }
 
     func show(_ appName: String, at point: NSPoint) {
@@ -99,16 +78,6 @@ extension View {
                 .onChanged { _ in WindowDrag.shared.update(window) }
                 .onEnded { _ in WindowDrag.shared.finish() })
     }
-
-    /// Register this view, at `frame` in the bar's window space, as the drop
-    /// target for `workspace`.
-    func workspaceDropTarget(_ workspace: String, frame: CGRect, screen: Screen) -> some View {
-        let target = WindowDrag.Target(workspace: workspace, monitorId: screen.monitorId)
-        return self
-            .onAppear { WindowDrag.shared.register(target, frame: screen.toScreen(frame)) }
-            .onChange(of: frame) { _, f in WindowDrag.shared.register(target, frame: screen.toScreen(f)) }
-            .onDisappear { WindowDrag.shared.unregister(target) }
-    }
 }
 
 /// The "+ 3" pill shown while dragging: a drop target for the first empty
@@ -121,7 +90,8 @@ struct FreeWorkspaceTarget: View {
     @State private var frame: CGRect = .zero
 
     var body: some View {
-        let isTarget = drag.isTarget(name, on: screen.monitorId)
+        let slot = WorkspaceSlot(workspace: name, monitorId: screen.monitorId)
+        let isTarget = drag.isTarget(slot)
         Pill(padding: 12, highlighted: isTarget) {
             Text("+ \(name)")
         }
@@ -130,12 +100,8 @@ struct FreeWorkspaceTarget: View {
                 Theme.foreground.opacity(isTarget ? 0.6 : 0.3),
                 style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
         .scaleEffect(isTarget ? 1.06 : 1)
-        .background(GeometryReader { geo in
-            Color.clear
-                .onAppear { frame = geo.frame(in: .global) }
-                .onChange(of: geo.frame(in: .global)) { _, f in frame = f }
-        })
-        .workspaceDropTarget(name, frame: frame, screen: screen)
+        .onWindowFrameChange { frame = $0 }
+        .reportsPillFrame(slot, frame: frame, screen: screen)
         .animation(.easeOut(duration: 0.15), value: isTarget)
     }
 }

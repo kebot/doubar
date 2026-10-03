@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @MainActor
@@ -25,6 +26,14 @@ final class Spotify: ObservableObject {
         // nothing to poll; query once at launch and then on each change.
         observeDistributed(Notification.Name("com.spotify.client.PlaybackStateChanged")) { [weak self] _ in
             Task { await self?.refresh() }
+        }
+        // Quitting while playing doesn't always announce a stop first.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == "com.spotify.client" else { return }
+            Task { @MainActor in self?.track = nil }
         }
         Task { await refresh() }
     }

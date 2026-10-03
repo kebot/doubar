@@ -21,6 +21,8 @@ final class AeroSpace: ObservableObject {
     private struct Workspace: Decodable { let workspace: String }
 
     @Published private(set) var focusedWorkspace = ""
+    /// The workspace each monitor is showing.
+    @Published private(set) var visibleWorkspaces: Set<String> = []
     @Published private(set) var windows: [Window] = []
 
     private static let bin = ["/opt/homebrew/bin/aerospace", "/usr/local/bin/aerospace"]
@@ -55,12 +57,18 @@ final class AeroSpace: ObservableObject {
             async let visible: [Workspace]? = query(["list-workspaces", "--monitor", "all", "--visible"])
             let (f, w, v) = await (focused, all, visible)
             if let f { focusedWorkspace = f.first?.workspace ?? "" }
-            if let w, w != windows { windows = w }
-            // AeroSpace parks hidden workspaces' windows off-screen, so a
-            // window's real position is only knowable while it is visible.
-            if let w, let v {
+            if let w, w != windows {
+                windows = w
+                let ids = Set(w.map(\.windowId))
+                WindowLayout.prune(keeping: ids)
+                Peek.shared.prune(keeping: ids)
+            }
+            if let v {
                 let shown = Set(v.map(\.workspace))
-                WindowLayout.record(w.filter { shown.contains($0.workspace) })
+                if shown != visibleWorkspaces { visibleWorkspaces = shown }
+                // AeroSpace parks hidden workspaces' windows off-screen, so
+                // a window's real position is only knowable while visible.
+                if let w { WindowLayout.record(w.filter { shown.contains($0.workspace) }) }
             }
 
             refreshing = false
@@ -174,11 +182,6 @@ struct AeroSpaceView: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: drag.window != nil)
-        .background(GeometryReader { geo in
-            Color.clear
-                .onAppear { screen.workspacesFrame = geo.frame(in: .global) }
-                .onChange(of: geo.frame(in: .global)) { _, frame in screen.workspacesFrame = frame }
-        })
     }
 }
 
@@ -196,7 +199,8 @@ private struct WorkspacePill: View {
     @State private var isHovered = false
     @State private var frame: CGRect = .zero
 
-    private var isDropTarget: Bool { drag.isTarget(name, on: screen.monitorId) }
+    private var slot: WorkspaceSlot { WorkspaceSlot(workspace: name, monitorId: screen.monitorId) }
+    private var isDropTarget: Bool { drag.isTarget(slot) }
     private var isOpen: Bool { isFocused || isHovered || isDropTarget }
 
     var body: some View {
@@ -215,11 +219,7 @@ private struct WorkspacePill: View {
         }
         .opacity(isOpen ? 1 : 0.8)
         .contentShape(Capsule())
-        .background(GeometryReader { geo in
-            Color.clear
-                .onAppear { frame = geo.frame(in: .global) }
-                .onChange(of: geo.frame(in: .global)) { _, f in frame = f }
-        })
+        .onWindowFrameChange { frame = $0 }
         .onHover { hovering in
             isHovered = hovering
             Peek.shared.pillHover(
@@ -229,7 +229,7 @@ private struct WorkspacePill: View {
             Peek.shared.hide()
             AeroSpace.shared.focus(workspace: name)
         }
-        .workspaceDropTarget(name, frame: frame, screen: screen)
+        .reportsPillFrame(slot, frame: frame, screen: screen)
         .contextMenu {
             Button("Rename Workspace…") { Rename.shared.begin(name, below: screen.toScreen(frame)) }
             if names[name] != nil {
@@ -257,31 +257,5 @@ private struct WindowIcon: View {
             .onTapGesture { AeroSpace.shared.focus(window: window) }
             .windowDragSource(window)
             .animation(.easeOut(duration: 0.15), value: isHovered)
-    }
-}
-
-struct AppIcon: View {
-    let appName: String
-    var size: CGFloat = 16
-
-    var body: some View {
-        if let icon = AppIcon.icon(for: appName) {
-            Image(nsImage: icon)
-                .resizable()
-                .frame(width: size, height: size)
-        } else {
-            Text(appName)
-        }
-    }
-
-    private static var cache: [String: NSImage] = [:]
-
-    /// The icon of a running application, looked up by its localized name.
-    static func icon(for appName: String) -> NSImage? {
-        if let cached = cache[appName] { return cached }
-        let icon = NSWorkspace.shared.runningApplications
-            .first { $0.localizedName == appName }?.icon
-        cache[appName] = icon
-        return icon
     }
 }

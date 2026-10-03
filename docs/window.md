@@ -11,5 +11,10 @@
 - `canHide = false` and `orderFrontRegardless()`: the app runs with the
   `.accessory` activation policy, is never active, and can start with
   `NSApp.isHidden` set depending on what launched it.
-- The peek preview is a separate non-activating panel at `.popUpMenu` level,
-  so it shows above app windows, placed below the hovered pill.
+- Floating panels share `PopupPanel` (`Views/Popup.swift`): borderless,
+  non-activating, `.popUpMenu` level (above app windows), all Spaces,
+  `canHide = false`, and placed below an anchor, kept on screen:
+  - the peek preview, below the hovered pill;
+  - the rename field, the only panel that becomes key, to take typing
+    without activating the app;
+  - the drag ghost, which follows the cursor and ignores the mouse.

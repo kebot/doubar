@@ -4,9 +4,6 @@ import SwiftUI
 /// Per-bar state the SwiftUI tree reads.
 final class Screen: ObservableObject {
     @Published var monitorId: Int
-    /// Where the workspace pills are, in window coordinates; scrolling over
-    /// them steps through workspaces.
-    var workspacesFrame: CGRect = .zero
     /// The bar window's frame in screen coordinates, to place popups.
     var windowFrame: NSRect = .zero
     init(monitorId: Int) { self.monitorId = monitorId }
@@ -85,12 +82,12 @@ private final class BarHostingView: NSHostingView<AnyView> {
     /// SwiftUI on macOS 14 has no scroll-wheel modifier, so wheel and
     /// trackpad scrolls over the workspace pills are turned into steps here.
     override func scrollWheel(with event: NSEvent) {
-        guard let screen else { return }
-        let p = convert(event.locationInWindow, from: nil)
+        guard let screen, let window else { return }
         // Only the horizontal span matters: the bar is barely taller than
         // the pills, and missing them by a few points shouldn't count.
-        let frame = screen.workspacesFrame
-        guard (frame.minX...frame.maxX).contains(p.x), event.momentumPhase.isEmpty else { return }
+        let x = window.convertPoint(toScreen: event.locationInWindow).x
+        guard PillFrames.span(on: screen.monitorId)?.contains(x) == true, event.momentumPhase.isEmpty
+        else { return }
 
         if event.phase == .began { scrollAccumulator = 0 }
         let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 30
