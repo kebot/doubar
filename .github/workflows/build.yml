@@ -13,28 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: oven-sh/setup-bun@v2
+      - name: Build app bundle
+        run: make bundle
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Build Tauri app
-        run: make build
+      - name: Zip app bundle
+        run: ditto -c -k --keepParent .build/doubar.app doubar-macos.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: doubar-macos
-          path: |
-            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
+          path: doubar-macos.zip

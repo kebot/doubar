@@ -1,31 +1,15 @@
-- Like übersicht there's only one webview in `doubar`.
-
 ## Window
 
-- the window is full screen SO it can covers the Notch area
-
-### Control the window for intractive
-
-```typescript
-import { invoke } from '@tauri-apps/api/core'
-
-// top most window with cursor events not ignored: usecase: Modal
-// this will make other part of the component not controlable by Mouse
-invoke('set_window_behavior', {
-  ignore_cursor_events: false,
-  always_on_top: true,
-})
-
-// widgets not intractive excepts the bar
-invoke('set_window_behavior', {
-  ignore_cursor_events: true,
-  always_on_top: true,
-})
-
-// window on bottom with cursor events enabled
-invoke('set_window_behavior', {
-  ignore_cursor_events: false,
-  always_on_bottom: true,
-})
-
-```
+- One borderless, non-activating `NSPanel` per display (`BarWindow.swift`), keyed
+  by `CGDirectDisplayID` and kept in sync on
+  `didChangeScreenParametersNotification` and wake.
+- The panel spans the full display width, flush with the top edge, so it can
+  cover the notch area. It is only as tall as the bar.
+- Level is `normalWindow - 1` (always on bottom): under every app window, above
+  the desktop. It joins all Spaces and takes clicks (`acceptsFirstMouse`), hover
+  and scroll.
+- `canHide = false` and `orderFrontRegardless()`: the app runs with the
+  `.accessory` activation policy, is never active, and can start with
+  `NSApp.isHidden` set depending on what launched it.
+- The peek preview is a separate non-activating panel at `.popUpMenu` level,
+  so it shows above app windows, placed below the hovered pill.
