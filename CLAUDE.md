@@ -4,57 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Doubar is a macOS menu bar replacement built with Tauri v2 + React + TypeScript. The app renders a transparent, always-on-bottom, click-through window spanning the full screen width, positioned at the top. It has no Dock icon and cannot be focused — it behaves purely as a desktop overlay bar.
+Doubar is a macOS menu bar replacement written in Swift (AppKit + SwiftUI, Swift Package Manager, no Xcode project). It draws a transparent, always-on-bottom strip along the top of every display that takes clicks, hover and scroll without ever activating the app. It has no Dock icon and is never the active app.
 
 ## Commands
 
 ```bash
-make dev          # start Tauri dev server (hot reload)
-make install      # install JS dependencies with bun
-make build  # production build (aarch64)
+make dev     # swift run doubar (foreground)
+make build   # release build (arm64) → .build/release/doubar
+make link    # build + symlink to ~/.local/bin/doubar
+make bundle  # .build/doubar.app (LSUIElement, ad-hoc signed)
 ```
 
-The Vite dev server is hardcoded to port 1420 (`strictPort: true`).
+`doubar emit <event> [key=value ...]` posts a distributed notification (`com.yaofur.doubar.event`) to the running bar and exits; it never starts a bar. AeroSpace hooks call `doubar emit aerospace`; `doubar emit peek workspace=<name>` opens a workspace preview (bare `peek` closes it). `doubar emit rename workspace=<name> [name=<label>]` sets a label or opens the rename field (bare `rename` closes it).
 
-## Architecture
+## Architecture (Sources/doubar/)
 
-### Frontend (src/)
+- `main.swift` — CLI dispatch (`emit`), single-instance lock (`flock` on `$TMPDIR/doubar.lock`), `.accessory` activation policy
+- `AppDelegate.swift` — one `BarWindow` per `NSScreen`, keyed by display ID; resyncs on screen-parameter changes and wake, then re-asserts ordering at 0.25/1/3 s
+- `BarWindow.swift` — the bar `NSPanel` (scroll handling included) and the per-bar `Screen` environment object: AeroSpace `monitorId`, the bar's screen frame, and `toScreen` to convert SwiftUI window-space rects to screen coordinates
+- `Support.swift` — logging, async `run(path, args)` subprocess helper, IPC, `observeDistributed`
+- `Views/` — `Bar.swift` (`BarView` layout, `Pill` capsule — the atomic bar item, `Theme` colours, `onWindowFrameChange`), `AppIcon.swift`, `Popup.swift` (`PopupPanel` base for every floating panel, `NSScreen.barAnchor`)
+- `Widgets/` — `AeroSpace.swift` (shared model + workspace pills), `PillFrames.swift` (`WorkspaceSlot` and the screen frames of every pill, for drop targets and scroll), `Peek.swift` (hover preview of a workspace), `Rename.swift` (workspace labels in UserDefaults suite `com.yaofur.doubar`, and the rename field), `WindowDrag.swift` (drag an icon onto a pill → `move-node-to-workspace`), `Spotify.swift`, `Clock.swift`
 
-- `main.tsx` — entry point; mounts `<App>` into the DOM
-- `App.tsx` — top-level layout; assembles the bar from widgets
-- `components/Bar.tsx` — `<Bar left right>` layout component and `<Pill>` — the styled capsule used for all bar items
-- `widgets/` — self-contained bar widgets:
-  - `AeroSpace/` — shows AeroSpace workspaces; uses Zustand store that shells out to `/opt/homebrew/bin/aerospace` via Tauri's shell plugin
-  - `Time.tsx` — clock widget
-- `dev/DevMain.tsx` — browser-only dev harness that mocks `window.__TAURI_INTERNALS__` so the UI can be iterated without running Tauri
-
-### Rust backend (src-tauri/src/)
-
-Two Tauri commands registered in `lib.rs`:
-
-| Command | File | Purpose |
-|---|---|---|
-| `get_app_icon` | `commands/get_app_icon.rs` | Returns a running app's icon as a base64 PNG data URI via macOS `NSWorkspace` (objc2 bindings) |
-| `set_window_behavior` | `commands/set_window_behavior.rs` | Dynamically changes window properties: `ignore_cursor_events`, `always_on_top/bottom`, `focusable`, `recreate` |
-
-`lib.rs` `setup` hook positions the window to match the primary monitor frame (with an 8px bleed offset to hide the 2px Tauri border) and sets `ActivationPolicy::Prohibited` so the app never appears in the Dock or Cmd+Tab switcher.
-
-### Tauri JS API usage pattern
-
-```typescript
-import { invoke } from '@tauri-apps/api/core'
-invoke<string>('get_app_icon', { appName })
-
-import { Command } from '@tauri-apps/plugin-shell'
-Command.create('exec-sh', ['-c', `aerospace ... --json`]).execute()
-```
-
-### Styling
-
-Tailwind CSS v4 (via `@tailwindcss/vite`). CSS variables `--bar-height` and `--background`/`--foreground` control theming. The `Pill` component is the atomic UI unit for bar items.
+Widget models are `@MainActor` singletons shared by all bars; per-display state comes from the `Screen` environment object.
 
 ## macOS-specific constraints
 
-- The window uses `macOSPrivateApi: true` in `tauri.conf.json` for `alwaysOnBottom` support.
-- `get_app_icon.rs` is `#[cfg(target_os = "macos")]` only — do not call it on other platforms.
-- AeroSpace queries hardcode `/opt/homebrew/bin/aerospace` — requires Homebrew on Apple Silicon.
+- Bar windows set `canHide = false`. Depending on what launches doubar, the process can start with `NSApp.isHidden == true`, which hides every window it owns while their frames stay intact. `orderFront:` is a no-op because the app is never active; use `orderFrontRegardless()`.
+- Distributed notifications must be observed with `suspensionBehavior: .deliverImmediately` (use `observeDistributed`); Cocoa suspends delivery for inactive apps.
+- AeroSpace monitor IDs are 1-based, ordered left to right then top to bottom; only `NSScreen.aeroSpaceMonitorId` / `forAeroSpaceMonitor` (AppDelegate.swift) know that mapping.
+- AeroSpace is found at `/opt/homebrew/bin/aerospace` or `/usr/local/bin/aerospace`.
+- Spotify is queried via `osascript` only when it posts `com.spotify.client.PlaybackStateChanged`; the script guards with `is running` so it never launches Spotify.
+- Bar windows accept first mouse (`acceptsFirstMouse`) and rely on SwiftUI's `.activeAlways` tracking areas for hover; tooltips (`.help`) never show for an inactive app.
+- Peek: AeroSpace parks hidden workspaces' windows off-screen, so `WindowLayout` remembers each window's place from when its workspace was visible; until then it lays windows out at their real (parked) sizes, side by side, then stacked, then as a grid. Peek skips workspaces already on screen and sizes the miniature to fit below the bar. Contents come from ScreenCaptureKit, which captures parked windows fine; it needs Screen Recording permission, granted to whatever launched doubar (the terminal, or the .app when bundled).
+- Floating panels subclass `PopupPanel` (`.popUpMenu` level, `canHide = false`, accepts first mouse). The rename field is the one that becomes key (`orderFrontRegardless()` then `makeKey()`): as a `.nonactivatingPanel` it gets the keyboard without activating doubar. Don't `NSApp.activate` for it; since macOS 14 an app can't take activation for itself.
+- Icon drags are a `DragGesture` plus a floating ghost panel, not system drag-and-drop (`onDrag` doesn't start reliably from a never-active app). Mouse-dragged events keep going to the bar window the press began in, so drops are found by hit-testing `NSEvent.mouseLocation` against `PillFrames`, which also works across displays.

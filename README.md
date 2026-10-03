@@ -4,37 +4,48 @@
 
 ⚠️ IT'S HIGHLY WIP, NOT RECOMMENDED FOR AVERAGE USER
 
+A native macOS bar written in Swift (AppKit + SwiftUI): AeroSpace workspaces,
+Spotify now-playing and a clock.
+
 ## Get started
 
-1. install deno and rust
-`brew install deno rust`
-2. `deno install`
-3. `deno task tauri dev`
+Requires the Xcode command line tools (`xcode-select --install`).
 
-See: https://tauri.app/ for more details
+```bash
+make dev     # build and run in the foreground
+make link    # release build, symlinked to ~/.local/bin/doubar
+make bundle  # .build/doubar.app, for Login Items
+```
 
-## Simular Projects
+## AeroSpace integration
+
+Hook AeroSpace events into the running bar with `doubar emit`:
+
+```toml
+on-focus-changed = ['exec-and-forget doubar emit aerospace']
+exec-on-workspace-change = ['/bin/bash', '-c', 'doubar emit aerospace']
+```
+
+`doubar emit <event> [key=value ...]` posts the event to the running bar and
+exits. It never starts a bar itself.
+
+## Using it
+
+- Click a workspace to go there. Click an icon to focus that window.
+- Scroll over the workspaces to step through them.
+- Drag an app icon onto another workspace to move that window there. While
+  dragging, a `+` pill offers the first empty workspace.
+- Right-click a workspace to rename it. Names are labels kept by doubar
+  (AeroSpace can't rename workspaces); a blank name clears it. From a
+  script: `doubar emit rename workspace=1 name=Code`.
+- Hover another workspace to peek at it live; click a window in the preview
+  to jump to it. `doubar emit peek workspace=3` opens a preview from a key
+  binding or script. Previews need Screen Recording permission; without it
+  they show app icons only.
+
+## Similar Projects
 
 - [UeberSicht](https://tracesof.net/uebersicht/)
 - [SketchyBar](https://github.com/FelixKratz/SketchyBar)
 - [Zebar](https://github.com/glzr-io/zebar)
-
-## Provided Rust API
-
-```typescript
-import { invoke } from '@tauri-apps/api/core'
-// get app icon as base64 icons
-invoke<string>('<app-name>', { appName })
-
-// running shell command
-import { Command } from '@tauri-apps/plugin-shell'
-
-```
-
-## Config API
-
-WIP
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [omacosy bar](https://github.com/paulsp94/omacosy/blob/main/helper/bar.swift)
