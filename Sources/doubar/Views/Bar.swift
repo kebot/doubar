@@ -14,6 +14,7 @@ struct BarView: View {
             AeroSpaceView()
             Spacer(minLength: 0)
             HStack(spacing: 4) {
+                StatusItemsView()
                 SpotifyView()
                 ClockView()
             }

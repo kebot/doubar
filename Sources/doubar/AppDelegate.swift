@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch event {
             case "aerospace": AeroSpace.shared.refresh()
             case "peek": Peek.shared.peek(params["workspace"])
+            case "status-item": StatusItems.shared.press(id: params["id"])
             case "rename":
                 guard let workspace = params["workspace"] else {
                     Rename.shared.end()
