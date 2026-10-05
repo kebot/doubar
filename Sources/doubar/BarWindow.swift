@@ -82,7 +82,7 @@ private final class BarHostingView: NSHostingView<AnyView> {
     /// SwiftUI on macOS 14 has no scroll-wheel modifier, so wheel and
     /// trackpad scrolls over the workspace pills are turned into steps here.
     override func scrollWheel(with event: NSEvent) {
-        guard let screen, let window else { return }
+        guard AeroSpace.enabled, let screen, let window else { return }
         // Only the horizontal span matters: the bar is barely taller than
         // the pills, and missing them by a few points shouldn't count.
         let x = window.convertPoint(toScreen: event.locationInWindow).x

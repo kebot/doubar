@@ -28,6 +28,8 @@ make bundle  # .build/doubar.app (LSUIElement, ad-hoc signed)
 
 Widget models are `@MainActor` singletons shared by all bars; per-display state comes from the `Screen` environment object.
 
+AeroSpace support is currently switched off (`AeroSpace.enabled = false`, the window manager is now OmniWM, which has its own bar). The flag hides the workspace pills, ignores `emit` events and turns off scroll-to-switch; the AeroSpace, Peek, Rename and WindowDrag code is left in place.
+
 ## macOS-specific constraints
 
 - Bar windows set `canHide = false`. Depending on what launches doubar, the process can start with `NSApp.isHidden == true`, which hides every window it owns while their frames stay intact. `orderFront:` is a no-op because the app is never active; use `orderFrontRegardless()`.

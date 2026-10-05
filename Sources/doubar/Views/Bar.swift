@@ -11,7 +11,7 @@ enum Theme {
 struct BarView: View {
     var body: some View {
         HStack(spacing: 4) {
-            AeroSpaceView()
+            if AeroSpace.enabled { AeroSpaceView() }
             Spacer(minLength: 0)
             HStack(spacing: 4) {
                 SpotifyView()

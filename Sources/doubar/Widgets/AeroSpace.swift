@@ -4,6 +4,11 @@ import SwiftUI
 // Check https://nikitabobko.github.io/AeroSpace/guide for concepts of AeroSpace
 @MainActor
 final class AeroSpace: ObservableObject {
+    /// Off while using OmniWM, which has its own bar. Gates every entry
+    /// point (pills, `emit` events, scroll), so `shared` is never created
+    /// and nothing ever runs `aerospace`.
+    nonisolated static let enabled = false
+
     static let shared = AeroSpace()
 
     struct Window: Decodable, Identifiable, Equatable {

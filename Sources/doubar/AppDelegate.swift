@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         IPC.listen { event, params in
             log("event '\(event)' \(params)")
+            guard AeroSpace.enabled else { return }
             switch event {
             case "aerospace": AeroSpace.shared.refresh()
             case "peek": Peek.shared.peek(params["workspace"])
