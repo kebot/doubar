@@ -4,6 +4,11 @@ import SwiftUI
 // Check https://nikitabobko.github.io/AeroSpace/guide for concepts of AeroSpace
 @MainActor
 final class AeroSpace: ObservableObject {
+    /// Off while using OmniWM, which has its own bar. Gates every entry
+    /// point (pills, `emit` events, scroll), so `shared` is never created
+    /// and nothing ever runs `aerospace`.
+    nonisolated static let enabled = false
+
     static let shared = AeroSpace()
 
     struct Window: Decodable, Identifiable, Equatable {
@@ -204,7 +209,10 @@ private struct WorkspacePill: View {
     private var isOpen: Bool { isFocused || isHovered || isDropTarget }
 
     var body: some View {
-        Pill(highlighted: (isHovered && !isFocused) || isDropTarget) {
+        Pill(
+            highlighted: (isHovered && !isFocused) || isDropTarget,
+            colors: Config.shared.colors(for: Config.shared.workspacesStyle)
+        ) {
             Text(name)
             if let label = names[name] {
                 Text(label)

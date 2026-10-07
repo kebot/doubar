@@ -27,28 +27,18 @@ final class WorkspaceNames: ObservableObject {
     }
 }
 
-/// The rename field: a small panel below the pill. It is a non-activating
-/// panel that still becomes key, so it takes the keyboard without
-/// activating doubar or taking focus from the app in front. (Activating
-/// the app instead doesn't work: since macOS 14 an app can't take
-/// activation for itself.)
+/// The rename field, below the workspace's pill (see `TextPrompt`).
 @MainActor
 final class Rename {
     static let shared = Rename()
 
-    private var panel: RenamePanel?
-
     func begin(_ workspace: String, below anchor: NSRect) {
         Peek.shared.hide()
-
-        let panel = self.panel ?? RenamePanel()
-        self.panel = panel
-        panel.show(
-            RenameView(workspace: workspace, initial: WorkspaceNames.shared[workspace] ?? "") { [weak self] name in
-                if let name { WorkspaceNames.shared.set(name, for: workspace) }
-                self?.end()
-            },
-            below: anchor)
+        TextPrompt.shared.begin(
+            label: workspace, placeholder: "Name", initial: WorkspaceNames.shared[workspace] ?? "", below: anchor
+        ) { name in
+            WorkspaceNames.shared.set(name, for: workspace)
+        }
     }
 
     /// Open the field from a script, anchored to the bar of the workspace's
@@ -60,63 +50,6 @@ final class Rename {
 
     /// Close the field without saving.
     func end() {
-        guard let panel, panel.isVisible else { return }
-        panel.orderOut(nil)
-    }
-}
-
-private final class RenamePanel: PopupPanel {
-    // The one popup that takes the keyboard. Being a non-activating panel,
-    // it does so without activating doubar.
-    override var canBecomeKey: Bool { true }
-
-    /// Clicking anywhere else cancels, like a popover.
-    override func resignKey() {
-        super.resignKey()
-        Task { @MainActor in Rename.shared.end() }
-    }
-
-    func show(_ view: RenameView, below anchor: NSRect) {
-        // A fresh identity each time, so the field resets and refocuses.
-        setContent(view.id(UUID()), below: anchor, gap: 6)
-        // The app is never active, so order front regardless, then take key.
-        orderFrontRegardless()
-        makeKey()
-    }
-}
-
-private struct RenameView: View {
-    let workspace: String
-    let initial: String
-    /// The new name, or nil when cancelled.
-    let done: (String?) -> Void
-
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text(workspace)
-                .foregroundStyle(Theme.foreground.opacity(0.6))
-            TextField("Name", text: $text)
-                .textFieldStyle(.plain)
-                .frame(width: 160)
-                .focused($focused)
-                .onSubmit { done(text) }
-                .onExitCommand { done(nil) }
-        }
-        .font(Theme.font)
-        .foregroundStyle(Theme.foreground)
-        .padding(.horizontal, 12)
-        .frame(height: 28)
-        .background(
-            Capsule()
-                .fill(Theme.background)
-                .overlay(Capsule().strokeBorder(Theme.foreground.opacity(0.2))))
-        .fixedSize()
-        .onAppear {
-            text = initial
-            focused = true
-        }
+        TextPrompt.shared.end()
     }
 }

@@ -1,0 +1,118 @@
+# Example doubar config: ~/.config/doubar/config.toml
+#
+# Every key is optional; the values below are the built-in defaults, except
+# [layout], which is an example. `doubar check-config` reports problems.
+#
+# This file is the source of truth, and doubar's settings UI edits it too:
+# dragging items rewrites [layout]; the Bar tab and the built-in widgets'
+# right-click menus replace values in [bar], [clock] and [spotify] in place
+# (each line keeps its comment). Nothing else is touched, so comments and
+# formatting elsewhere survive. If the file is a symlink (dotter), doubar
+# writes through it. Workspace labels stay in UserDefaults (suite
+# com.yaofur.doubar).
+#
+# Colours come from a second file, ~/.config/doubar/theme.toml: a flat
+# palette that dotter renders from the Omarchy theme (an Omarchy palette with
+# its [default.variables] header works too). Wherever a colour is expected
+# you can write:
+#
+#   "#261d35"                       a literal colour
+#   "#261d35cc"                     a literal colour with alpha
+#   "accent"                        a palette key from theme.toml
+#   "foreground/12%"                any colour at 12% of its opacity
+#   "mix(background, accent, 20%)"  a blend, same as dotter's mix helper
+#
+# Only use palette keys every Omarchy theme has: mode, accent, selection,
+# muted, background, foreground, bright_foreground, dark_background,
+# darker_background, lighter_background, dark_foreground, light_foreground,
+# red, yellow, green, cyan, blue, magenta and their bright_* variants.
+#
+# doubar reloads when this file or theme.toml changes, or on
+# `doubar emit reload`. A file that fails to parse is ignored, the last good
+# config is kept, and the settings UI saves nothing until it is fixed.
+
+# A built-in palette instead of theme.toml: catppuccin, catppuccin-latte,
+# ethereal, everforest, flexoki-light, gruvbox, hackerman, kanagawa,
+# last-horizon, lumon, lupine, matte-black, miasma, nord, osaka-jade,
+# retro-82, ristretto, rose-pine, solitude, tokyo-night, vantablack, white.
+# Leave it out to follow theme.toml (dotter's, from the Omarchy theme).
+[theme]
+# name = "tokyo-night"
+
+[bar]
+height = 20              # pill height, in points
+padding = [6, 10]        # [top, horizontal] around the row of pills
+gap = 4                  # space between pills
+pill-padding = 16        # horizontal padding inside the clock's and Spotify's pills
+font = { family = "system", size = 13 }   # "system" or any installed family
+
+# Semantic colour roles shared by every widget and popup.
+[colors]
+pill = "background"          # pill and popup fill
+text = "foreground"          # labels and icons
+hover = "foreground/12%"     # overlay on a hovered pill or item
+border = "foreground/15%"    # popup and preview outlines
+dim = "foreground/60%"       # placeholders, secondary labels
+accent = "accent"            # drop targets in the settings popup
+icon = "foreground"          # status items' grey parts, with tint = "palette"
+
+# Widgets in each group, drawn left to right. Unknown names are skipped.
+# Each entry is its own pill:
+#
+#   "spotify", "clock"                 a widget ("workspaces" too, with AeroSpace)
+#   "status:<app id>/<name>"           one status item, e.g.
+#                                      "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi"
+#   "status:<app id>"                  every item of one app, e.g. "status:eu.exelban.Stats"
+#   "settings"                         the button that opens the settings popup
+#   [ ... ]                            several entries sharing one pill
+#
+# Anything not listed is not shown: a new app's status item stays out of the
+# bar until it is added here or dragged in from the settings popup. Without a
+# "settings" entry the popup opens from any pill's right-click menu (Bar
+# Settings…) or `doubar emit settings`. Ids are the ones the settings popup
+# shows when you hover an item;
+# `doubar emit status-item id=<id>` takes the same ids. An entry whose app
+# isn't running is skipped and kept. With no [layout] at all, the bar shows
+# every status item, Spotify, the clock and the settings button.
+#
+# Written by the settings UI; comments inside this table are not kept.
+[layout]
+left = []
+right = [
+  [
+    "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi",
+    "status:com.apple.MenuBarAgent/com.apple.menuextra.battery",
+  ],
+  "spotify",
+  "clock",
+  "settings",
+]
+
+[clock]
+# A DateFormatter pattern; without one, the system's numeric date and time.
+# format = "EEE d MMM  HH:mm"
+# The widget's own pill and text colours, any colour expression. Alone in a
+# pill it colours the pill; sharing one, just its own part.
+# style = { pill = "accent", text = "background" }
+
+[spotify]
+max-width = 240
+artwork = true                   # album art instead of a note icon
+text = "artist-title"            # "artist-title" or "title"
+# style = { pill = "mix(background, green, 15%)" }
+
+# [workspaces]
+# style = { pill = "lighter_background" }
+
+[status-items]
+# How status items are coloured: "none" (as the app draws them),
+# "palette" (white and grey parts in colors.icon, coloured parts in the
+# theme's red, yellow, green, cyan, blue or magenta nearest their hue) or
+# "mono" (everything in colors.accent, coloured parts at half strength so a
+# chart's line stays apart from its box; the clock, Spotify and the
+# settings button turn accent too, unless they have a style).
+tint = "none"
+
+[popup]
+radius = 12           # the settings popup
+preview-radius = 16   # workspace peek

@@ -2,6 +2,7 @@ import AppKit
 
 // doubar                      start the bar
 // doubar emit <event> [k=v]   forward an event to the running bar, then exit
+// doubar check-config         report problems in config.toml and theme.toml
 //
 // `emit` never starts a bar. AeroSpace hooks call it on every focus change,
 // so if it could become the primary instance a stray hook would launch the
@@ -10,6 +11,8 @@ let argv = CommandLine.arguments
 switch argv.dropFirst().first {
 case "emit":
     exit(IPC.emit(Array(argv.dropFirst(2))))
+case "check-config":
+    exit(Config.check())
 case nil:
     break
 case let unknown?:

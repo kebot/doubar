@@ -38,6 +38,16 @@ class PopupPanel: NSPanel {
         setFrame(NSRect(x: x, y: y, width: size.width, height: size.height), display: true)
         invalidateShadow()
     }
+
+    /// Resize to `size` as the content changes, keeping the top edge where
+    /// it is and the panel inside its screen.
+    func fit(_ size: CGSize) {
+        guard size.width > 0, size.height > 0, size != frame.size else { return }
+        let bounds = NSScreen.containing(frame)?.frame ?? frame
+        let x = min(frame.minX, bounds.maxX - size.width - 8)
+        setFrame(NSRect(x: x, y: frame.maxY - size.height, width: size.width, height: size.height), display: true)
+        invalidateShadow()
+    }
 }
 
 final class PopupHostingView: NSHostingView<AnyView> {
