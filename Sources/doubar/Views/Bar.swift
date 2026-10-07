@@ -64,7 +64,7 @@ struct BarView: View {
         case "clock", "settings":
             return [.widget(entry)]
         case "spotify":
-            return spotify.track == nil ? [] : [.widget(entry)]
+            return spotify.track == nil || !spotify.isPlaying ? [] : [.widget(entry)]
         default:
             return statusItems.items(for: entry).compactMap { item in
                 statusItems.images[item.id].map { .status(item, $0) }

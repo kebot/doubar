@@ -101,6 +101,29 @@ artwork = true                   # album art instead of a note icon
 text = "artist-title"            # "artist-title" or "title"
 # style = { pill = "mix(background, green, 15%)" }
 
+# Music controls and time-synced lyrics grown out of the MacBook notch,
+# following Spotify. Click it to expand. Lyrics come from LRCLIB (synced
+# only). 红心 and 垃圾桶 are kept locally: likes don't reach Spotify's Liked Songs, and banned
+# tracks are skipped whenever they start.
+[notch]
+enabled = true
+collapse-delay = 600     # ms after the pointer leaves
+lyric-peek = true        # current line under the camera
+fake-notch = false       # draw a 200 × 32 tab on a display without a notch
+
+# Optional. The body is always black, so "foreground" here is the lighter
+# of the theme's foreground and background, and "accent" is lifted when
+# too dark to read on black. There is no background key.
+# [notch.colors]
+# text = "foreground"
+# text-secondary = "foreground/60%"
+# track = "foreground/16%"
+# hover = "hover"
+# accent = "accent"
+# glow = "accent/60%"
+# loved = "#f2545b"
+# cover = { scrim = "#000000/38%", icon = "#ffffff" }
+
 # [workspaces]
 # style = { pill = "lighter_background" }
 
