@@ -19,7 +19,8 @@ final class Screen: ObservableObject {
 /// below normal windows and on every Space. It takes clicks, hover and
 /// scroll without ever activating the app or taking key focus.
 final class BarWindow: NSPanel {
-    static let height: CGFloat = 30
+    /// The pills, the padding above them and a little room below.
+    static var height: CGFloat { Config.shared.bar.paddingTop + Config.shared.bar.height + 4 }
 
     private let screenState: Screen
 

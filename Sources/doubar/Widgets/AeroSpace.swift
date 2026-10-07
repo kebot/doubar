@@ -209,7 +209,10 @@ private struct WorkspacePill: View {
     private var isOpen: Bool { isFocused || isHovered || isDropTarget }
 
     var body: some View {
-        Pill(highlighted: (isHovered && !isFocused) || isDropTarget) {
+        Pill(
+            highlighted: (isHovered && !isFocused) || isDropTarget,
+            colors: Config.shared.colors(for: Config.shared.workspacesStyle)
+        ) {
             Text(name)
             if let label = names[name] {
                 Text(label)

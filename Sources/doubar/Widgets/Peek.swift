@@ -299,7 +299,7 @@ struct PeekView: View {
                 Text("\(windows.count) WINDOW\(windows.count == 1 ? "" : "S")")
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .tracking(2)
-                    .foregroundStyle(Theme.foreground.opacity(0.6))
+                    .foregroundStyle(Theme.dim)
             }
 
             ZStack(alignment: .topLeading) {
@@ -312,7 +312,7 @@ struct PeekView: View {
             }
             .frame(width: size.width, height: size.height)
             .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.foreground.opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border))
 
             Text("Click a window to jump to it")
                 .font(.system(size: 12, design: .monospaced))
@@ -321,9 +321,9 @@ struct PeekView: View {
         .padding(20)
         .fixedSize()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: Theme.previewRadius)
                 .fill(Theme.background)
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Theme.foreground.opacity(0.15))))
+                .overlay(RoundedRectangle(cornerRadius: Theme.previewRadius).strokeBorder(Theme.border)))
         .foregroundStyle(Theme.foreground)
         .onHover { peek.panelHover($0) }
     }

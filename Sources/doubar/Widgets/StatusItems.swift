@@ -7,8 +7,8 @@ import SwiftUI
 // bar. The system menu bar is auto-hidden behind doubar but MenuBarAgent
 // keeps rendering it, so its window is captured with ScreenCaptureKit and
 // cut into items along the frames Accessibility reports. Clicks are
-// forwarded as AXPress, which opens the item's own menu. Right-click hides
-// an item; the settings button lists every item to pick which are shown.
+// forwarded as AXPress, which opens the item's own menu. Which items the
+// bar shows, and where, is the [layout] in config.toml.
 
 @MainActor
 final class StatusItems: ObservableObject {
@@ -16,7 +16,8 @@ final class StatusItems: ObservableObject {
 
     struct Item: Identifiable {
         /// Stable across launches: the app's bundle id and the item's
-        /// identifier, description or position within the app.
+        /// identifier, description, title or help text (Stats names its
+        /// items only there), else its position within the app.
         let id: String
         let appName: String
         /// What the item calls itself, e.g. "Wi-Fi", if anything.
@@ -32,12 +33,20 @@ final class StatusItems: ObservableObject {
     /// Items left to right, with their latest picture.
     @Published private(set) var items: [Item] = []
     @Published private(set) var images: [String: CGImage] = [:]
-    /// Ids of the items kept out of the bar, saved across launches.
-    @Published private(set) var hidden: Set<String>
+    /// Each picture split into its white and grey pixels and its coloured
+    /// ones, for `IconTint.palette` and `.mono`.
+    @Published private(set) var layers: [String: Layers] = [:]
 
-    // The suite WorkspaceNames uses, so the bare binary and the .app agree.
-    private let defaults = UserDefaults(suiteName: "com.yaofur.doubar") ?? .standard
-    private let hiddenKey = "hiddenStatusItems"
+    struct Layers {
+        let neutral: CGImage
+        /// Nil when the picture has no colour of its own.
+        let coloured: CGImage?
+    }
+
+    /// Items hidden in the old settings popup, before [layout] existed. The
+    /// default layout leaves them out until a layout is saved.
+    static let legacyHidden = Set(
+        UserDefaults(suiteName: "com.yaofur.doubar")?.stringArray(forKey: "hiddenStatusItems") ?? [])
 
     /// The height of the slice cut from the middle of the menu bar.
     static let sliceHeight: CGFloat = 22
@@ -54,7 +63,6 @@ final class StatusItems: ObservableObject {
     private static let systemExpand = "com.apple.MenuBarAgent/Show Hidden Menu Bar Items"
 
     private init() {
-        hidden = Set(defaults.stringArray(forKey: hiddenKey) ?? [])
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.refresh() }
         }
@@ -145,9 +153,9 @@ final class StatusItems: ObservableObject {
         abs(a.minX - b.minX) < 2 && abs(a.minY - b.minY) < 2 && abs(a.width - b.width) < 2 && abs(a.height - b.height) < 2
     }
 
-    func setHidden(_ isHidden: Bool, _ item: Item) {
-        if isHidden { hidden.insert(item.id) } else { hidden.remove(item.id) }
-        defaults.set(hidden.sorted(), forKey: hiddenKey)
+    /// The items a layout entry shows, left to right.
+    func items(for entry: String) -> [Item] {
+        items.filter { Entry.matches(entry, item: $0.id) }
     }
 
     private func refresh() async {
@@ -203,6 +211,52 @@ final class StatusItems: ObservableObject {
             fresh[item.id] = image.cropping(to: slice.integral)
         }
         images = fresh
+        switch Config.shared.iconTint {
+        case .original: if !layers.isEmpty { layers = [:] }
+        case .mono: layers = fresh.compactMapValues { Self.layers($0, hues: nil) }
+        case .palette:
+            let hues = Config.shared.hues
+            layers = fresh.compactMapValues { Self.layers($0, hues: hues) }
+        }
+    }
+
+    /// Split a picture into its white and grey pixels and its saturated
+    /// ones (Stats' graphs and dots, a red low battery), whose colour
+    /// carries meaning. With `hues`, each saturated pixel takes the theme's
+    /// colour for its hue instead, at its own opacity, so a chart's line
+    /// stays apart from its box.
+    private static func layers(_ image: CGImage, hues: Config.Hues?) -> Layers? {
+        let w = image.width, h = image.height
+        let space = CGColorSpaceCreateDeviceRGB(), info = CGImageAlphaInfo.premultipliedLast.rawValue
+        func context() -> CGContext? {
+            CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: space, bitmapInfo: info)
+        }
+        guard w > 0, h > 0, let source = context(), let neutral = context(), let coloured = context(),
+              let src = source.data?.bindMemory(to: UInt8.self, capacity: w * h * 4),
+              let n = neutral.data?.bindMemory(to: UInt8.self, capacity: w * h * 4),
+              let c = coloured.data?.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        else { return nil }
+        source.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var anyColour = false
+        for i in stride(from: 0, to: w * h * 4, by: 4) {
+            // Premultiplied, so the channel spread is relative to alpha.
+            let r = Int(src[i]), g = Int(src[i + 1]), b = Int(src[i + 2]), a = Int(src[i + 3])
+            let saturated = max(r, g, b) - min(r, g, b) > a / 4
+            anyColour = anyColour || saturated
+            let target = saturated ? c : n
+            if saturated, let hues, let colour = hues.colour(r: r, g: g, b: b) {
+                // Premultiplied by the pixel's own alpha.
+                let alpha = Double(a) / 255
+                target[i] = UInt8(colour.r * alpha * 255)
+                target[i + 1] = UInt8(colour.g * alpha * 255)
+                target[i + 2] = UInt8(colour.b * alpha * 255)
+                target[i + 3] = UInt8(a)
+            } else {
+                for k in 0..<4 { target[i + k] = src[i + k] }
+            }
+        }
+        guard let neutralImage = neutral.makeImage() else { return nil }
+        return Layers(neutral: neutralImage, coloured: anyColour ? coloured.makeImage() : nil)
     }
 
     /// Every app's status items via its AXExtrasMenuBar, sorted left to right.
@@ -223,8 +277,8 @@ final class StatusItems: ObservableObject {
                     guard let bar: AXUIElement = app.attribute("AXExtrasMenuBar"),
                           let children: [AXUIElement] = bar.attribute(kAXChildrenAttribute)
                     else { continue }
-                    // Apps like Stats give every item the same (empty) name,
-                    // so repeats within an app are numbered in AX order.
+                    // Items that share a name (or have none) are numbered
+                    // in AX order within their app.
                     var seen: [String: Int] = [:]
                     for child in children {
                         guard let frame = child.frame, frame.width > 0 else { continue }
@@ -236,6 +290,7 @@ final class StatusItems: ObservableObject {
                         let target = inner.first { $0.actionNames.contains(kAXPressAction) } ?? child
                         let label = child.text(kAXDescriptionAttribute) ?? child.text(kAXTitleAttribute)
                             ?? inner.lazy.compactMap { $0.text(kAXDescriptionAttribute) }.first
+                            ?? child.text(kAXHelpAttribute)
                         let name = child.text(kAXIdentifierAttribute)
                             ?? inner.lazy.compactMap { $0.text(kAXIdentifierAttribute) }.first ?? label ?? ""
                         let n = seen[name, default: 0]
@@ -319,136 +374,62 @@ private extension AXUIElement {
     }
 }
 
-/// A status item's captured picture, at bar size.
-private struct ItemImage: View {
+/// A status item's captured picture, `height` tall.
+struct ItemImage: View {
     let item: StatusItems.Item
     let image: CGImage
+    var height: CGFloat = Theme.pillHeight
 
     var body: some View {
+        let size = CGSize(width: item.width * height / StatusItems.sliceHeight, height: height)
+        // The picture's background is transparent, so each layer, as a
+        // template image, keeps its shape and takes one colour.
+        let tint = Config.shared.iconTint, colors = Config.shared.colors
+        if tint != .original, let layers = StatusItems.shared.layers[item.id] {
+            ZStack {
+                tinted(layers.neutral, tint == .mono ? colors.accent : colors.icon)
+                if let coloured = layers.coloured {
+                    if tint == .mono {
+                        tinted(coloured, colors.accent).opacity(0.5)
+                    } else {
+                        // Already moved onto the palette.
+                        Image(decorative: coloured, scale: 1).resizable()
+                    }
+                }
+            }
+            .frame(width: size.width, height: size.height)
+        } else {
+            Image(decorative: image, scale: 1).resizable().frame(width: size.width, height: size.height)
+        }
+    }
+
+    private func tinted(_ image: CGImage, _ colour: Color) -> some View {
         Image(decorative: image, scale: 1)
+            .renderingMode(.template)
             .resizable()
-            .frame(width: item.width * Theme.pillHeight / StatusItems.sliceHeight, height: Theme.pillHeight)
+            .foregroundStyle(colour)
     }
 }
 
-struct StatusItemsView: View {
-    @ObservedObject private var model = StatusItems.shared
+/// One status item in the bar: click opens its menu, right-click offers
+/// `menu`.
+struct StatusItemView<Menu: View>: View {
+    let item: StatusItems.Item
+    let image: CGImage
+    @ViewBuilder var menu: Menu
+
     @EnvironmentObject private var screen: Screen
-    @State private var hovered: String?
-    @State private var settingsFrame: CGRect = .zero
-    @State private var itemFrames: [String: CGRect] = [:]
+    @State private var hovered = false
+    @State private var frame: CGRect = .zero
 
     var body: some View {
-        let captured = model.items.filter { model.images[$0.id] != nil }
-        if !captured.isEmpty {
-            Pill(padding: 4) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 18, height: Theme.pillHeight)
-                    .opacity(hovered == "settings" ? 1 : 0.6)
-                    .contentShape(Rectangle())
-                    .onWindowFrameChange { settingsFrame = $0 }
-                    .onHover { hovered = $0 ? "settings" : (hovered == "settings" ? nil : hovered) }
-                    .onTapGesture { StatusItemsSettings.shared.toggle(below: screen.toScreen(settingsFrame)) }
-                ForEach(captured.filter { !model.hidden.contains($0.id) }) { item in
-                    ItemImage(item: item, image: model.images[item.id]!)
-                        .padding(.horizontal, 4)
-                        .background(Capsule().fill(Theme.foreground.opacity(hovered == item.id ? 0.12 : 0)))
-                        .contentShape(Rectangle())
-                        .onWindowFrameChange { itemFrames[item.id] = $0 }
-                        .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
-                        .onTapGesture { model.press(item, below: screen.toScreen(itemFrames[item.id] ?? .zero)) }
-                        .contextMenu {
-                            Button("Hide") { model.setHidden(true, item) }
-                        }
-                }
-            }
-        }
-    }
-}
-
-/// The list of every status item, to pick which the bar shows. It closes on
-/// the settings button or a click in another app.
-@MainActor
-final class StatusItemsSettings {
-    static let shared = StatusItemsSettings()
-
-    private var panel: PopupPanel?
-    private var monitor: Any?
-
-    func toggle(below anchor: NSRect) {
-        if panel?.isVisible == true {
-            close()
-            return
-        }
-        let panel = self.panel ?? PopupPanel()
-        self.panel = panel
-        panel.setContent(StatusItemsSettingsView(), below: anchor, gap: 8, inset: 12)
-        panel.orderFrontRegardless()
-        // A global monitor only sees clicks that go to other apps, which is
-        // what "clicked away" means here; mouse events need no permission.
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in self?.close() }
-        }
-    }
-
-    func close() {
-        panel?.orderOut(nil)
-        if let monitor { NSEvent.removeMonitor(monitor) }
-        monitor = nil
-    }
-}
-
-private struct StatusItemsSettingsView: View {
-    @ObservedObject private var model = StatusItems.shared
-    @State private var hovered: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("STATUS ITEMS")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .tracking(2)
-                .foregroundStyle(Theme.foreground.opacity(0.6))
-                .padding(.horizontal, 8)
-                .padding(.bottom, 6)
-            ForEach(model.items) { item in
-                row(item)
-            }
-        }
-        .padding(12)
-        .fixedSize()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Theme.background)
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.foreground.opacity(0.15))))
-        .foregroundStyle(Theme.foreground)
-        .font(Theme.font)
-    }
-
-    private func row(_ item: StatusItems.Item) -> some View {
-        let shown = !model.hidden.contains(item.id)
-        return HStack(spacing: 10) {
-            Image(systemName: shown ? "checkmark.square.fill" : "square")
-                .font(.system(size: 14))
-                .frame(width: 16)
-            Group {
-                if let image = model.images[item.id] {
-                    ItemImage(item: item, image: image)
-                } else {
-                    Color.clear.frame(width: 20, height: Theme.pillHeight)
-                }
-            }
-            .frame(minWidth: 40, alignment: .center)
-            .opacity(shown ? 1 : 0.4)
-            Text([item.appName, item.label].compactMap { $0 }.joined(separator: " · "))
-                .opacity(shown ? 1 : 0.6)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: 26)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.foreground.opacity(hovered == item.id ? 0.1 : 0)))
-        .contentShape(Rectangle())
-        .onHover { hovered = $0 ? item.id : (hovered == item.id ? nil : hovered) }
-        .onTapGesture { model.setHidden(shown, item) }
+        ItemImage(item: item, image: image)
+            .padding(.horizontal, 4)
+            .background(Capsule().fill(hovered ? Theme.hover : .clear))
+            .contentShape(Rectangle())
+            .onWindowFrameChange { frame = $0 }
+            .onHover { hovered = $0 }
+            .onTapGesture { StatusItems.shared.press(item, below: screen.toScreen(frame)) }
+            .contextMenu { menu }
     }
 }

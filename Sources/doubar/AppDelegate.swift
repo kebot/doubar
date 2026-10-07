@@ -1,10 +1,12 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One bar per display, keyed by CGDirectDisplayID.
     private var bars: [CGDirectDisplayID: BarWindow] = [:]
     private var reassertWork: [DispatchWorkItem] = []
+    private var barSize: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Depending on what launches doubar, the process can come up with
@@ -15,28 +17,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.unhide(nil)
         }
 
+        Config.shared.start()
+
         IPC.listen { event, params in
             log("event '\(event)' \(params)")
-            guard AeroSpace.enabled else { return }
             switch event {
-            case "aerospace": AeroSpace.shared.refresh()
-            case "peek": Peek.shared.peek(params["workspace"])
+            case "reload": Config.shared.reload()
+            case "settings": BarSettings.shared.toggle(below: nil)
             case "status-item": StatusItems.shared.press(id: params["id"])
-            case "rename":
-                guard let workspace = params["workspace"] else {
-                    Rename.shared.end()
-                    break
-                }
-                if let name = params["name"] {
-                    WorkspaceNames.shared.set(name, for: workspace)
-                } else {
-                    Rename.shared.begin(workspace)
-                }
-            default: break
+            default: Self.aerospaceEvent(event, params)
             }
         }
 
         syncBars()
+        // The bar's height follows [bar] height and padding.
+        barSize = Config.shared.$bar
+            .map { $0.height + $0.paddingTop }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.syncBars() } }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -49,6 +49,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             self?.screensChanged()
+        }
+    }
+
+    /// Events from AeroSpace's hooks; ignored while AeroSpace is off.
+    @MainActor private static func aerospaceEvent(_ event: String, _ params: [String: String]) {
+        guard AeroSpace.enabled else { return }
+        switch event {
+        case "aerospace": AeroSpace.shared.refresh()
+        case "peek": Peek.shared.peek(params["workspace"])
+        case "rename":
+            guard let workspace = params["workspace"] else {
+                Rename.shared.end()
+                break
+            }
+            if let name = params["name"] {
+                WorkspaceNames.shared.set(name, for: workspace)
+            } else {
+                Rename.shared.begin(workspace)
+            }
+        default: break
         }
     }
 
