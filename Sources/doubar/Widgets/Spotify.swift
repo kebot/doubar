@@ -122,33 +122,3 @@ final class Spotify: ObservableObject {
         }
     }
 }
-
-/// The playing track: artwork, then "artist – title" or the title alone,
-/// as config.toml's [spotify] says. Draws nothing while nothing plays.
-struct SpotifyView: View {
-    @ObservedObject private var spotify = Spotify.shared
-    @ObservedObject private var config = Config.shared
-
-    var body: some View {
-        if let track = spotify.track, spotify.isPlaying {
-            let options = config.spotify
-            HStack(spacing: 0) {
-                if options.artwork {
-                    AsyncImage(url: track.artworkURL) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Color.clear
-                    }
-                    .frame(width: Theme.pillHeight - 4, height: Theme.pillHeight - 4)
-                    .clipShape(Circle())
-                    .padding(.leading, 2)
-                }
-                Text(options.text == .title ? "▶ \(track.name)" : "▶ \(track.artist) – \(track.name)")
-                    .lineLimit(1)
-                    .padding(.leading, options.artwork ? 6 : config.bar.pillPadding * 0.75)
-                    .padding(.trailing, config.bar.pillPadding * 0.75)
-                    .frame(maxWidth: options.maxWidth)
-            }
-        }
-    }
-}

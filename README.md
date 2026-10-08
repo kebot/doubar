@@ -5,7 +5,7 @@
 ⚠️ IT'S HIGHLY WIP, NOT RECOMMENDED FOR AVERAGE USER
 
 A native macOS bar written in Swift (AppKit + SwiftUI): AeroSpace workspaces,
-Spotify now-playing and a clock.
+a clock, and Spotify controls with synced lyrics in the notch.
 
 ## Get started
 

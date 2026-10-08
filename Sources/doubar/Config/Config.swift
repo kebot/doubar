@@ -36,17 +36,6 @@ final class Config: ObservableObject {
         var style = Style()
     }
 
-    enum SpotifyText: String, CaseIterable {
-        case artistTitle = "artist-title", title
-    }
-
-    struct Spotify: Equatable {
-        var maxWidth: CGFloat = 240
-        var artwork = true
-        var text = SpotifyText.artistTitle
-        var style = Style()
-    }
-
     /// [notch]: the music overlay grown out of the MacBook notch.
     struct Notch: Equatable {
         var enabled = true
@@ -162,7 +151,6 @@ final class Config: ObservableObject {
     /// `effectiveLayout`).
     @Published private(set) var layout: Layout?
     @Published private(set) var clock = Clock()
-    @Published private(set) var spotify = Spotify()
     @Published private(set) var workspacesStyle = Style()
     @Published private(set) var notch = Notch()
     @Published private(set) var iconTint = IconTint.original
@@ -345,14 +333,6 @@ final class Config: ObservableObject {
         let c = doc["clock"]
         set(\.clock, Clock(format: c?["format"]?.string, style: Self.style(c)))
 
-        let s = doc["spotify"]
-        var spotify = Spotify()
-        spotify.maxWidth = clamp(s?["max-width"]?.number, 40...2000) ?? spotify.maxWidth
-        spotify.artwork = s?["artwork"]?.bool ?? spotify.artwork
-        spotify.text = s?["text"]?.string.flatMap(SpotifyText.init) ?? spotify.text
-        spotify.style = Self.style(s)
-        set(\.spotify, spotify)
-
         let n = doc["notch"]
         var notch = Notch()
         notch.enabled = n?["enabled"]?.bool ?? notch.enabled
@@ -379,11 +359,13 @@ final class Config: ObservableObject {
         v.map { min(max(CGFloat($0), range.lowerBound), range.upperBound) }
     }
 
+    /// Unknown names (a removed widget, say) are dropped.
     private static func pills(_ v: TomlValue?) -> [[String]] {
-        (v?.array ?? []).compactMap { item in
-            if let s = item.string { return [s] }
-            let group = item.array?.compactMap(\.string) ?? []
-            return group.isEmpty ? nil : group
+        let known = { (s: String) in Entry.isWidget(s) || s.hasPrefix("status:") }
+        return (v?.array ?? []).compactMap { item in
+            let group = item.string.map { [$0] } ?? item.array?.compactMap(\.string) ?? []
+            let entries = group.filter(known)
+            return entries.isEmpty ? nil : entries
         }
     }
 
@@ -452,7 +434,6 @@ final class Config: ObservableObject {
     func style(of widget: String) -> Style {
         switch widget {
         case "clock": clock.style
-        case "spotify": spotify.style
         case "workspaces": workspacesStyle
         default: Style()
         }
@@ -579,7 +560,7 @@ final class Config: ObservableObject {
                 let all = builtinPalette.merging(chosen) { $1 }
                 var exprs: [(String, String)] = []
                 for (k, v) in doc["colors"]?.table ?? [:] { if let s = v.string { exprs.append(("colors.\(k)", s)) } }
-                for w in ["clock", "spotify", "workspaces"] {
+                for w in ["clock", "workspaces"] {
                     for k in ["pill", "text"] {
                         if let s = doc[w]?["style"]?[k]?.string { exprs.append(("\(w).style.\(k)", s)) }
                     }

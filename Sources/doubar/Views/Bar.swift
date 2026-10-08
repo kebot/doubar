@@ -26,7 +26,6 @@ struct BarView: View {
     @ObservedObject private var config = Config.shared
     // Observed so pills come and go with what they show.
     @ObservedObject private var statusItems = StatusItems.shared
-    @ObservedObject private var spotify = Spotify.shared
 
     var body: some View {
         let layout = config.effectiveLayout
@@ -57,14 +56,12 @@ struct BarView: View {
         }
     }
 
-    /// What `entry` draws right now: nothing for an app that isn't running
-    /// or a Spotify that isn't playing, so its pill closes up.
+    /// What `entry` draws right now: nothing for an app that isn't running,
+    /// so its pill closes up.
     private func parts(_ entry: String) -> [BarPart] {
         switch entry {
         case "clock", "settings":
             return [.widget(entry)]
-        case "spotify":
-            return spotify.track == nil || !spotify.isPlaying ? [] : [.widget(entry)]
         default:
             return statusItems.items(for: entry).compactMap { item in
                 statusItems.images[item.id].map { .status(item, $0) }
@@ -107,7 +104,6 @@ private struct BarPill: View {
     private func padding(_ widget: String?) -> CGFloat {
         switch widget {
         case "clock": config.bar.pillPadding
-        case "spotify": 0
         default: 4
         }
     }
@@ -143,7 +139,6 @@ private struct BarPartView: View {
     private func widget(_ name: String) -> some View {
         switch name {
         case "clock": ClockView().padding(.horizontal, shared ? 6 : 0)
-        case "spotify": SpotifyView()
         default: EmptyView()
         }
     }

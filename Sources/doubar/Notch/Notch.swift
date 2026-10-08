@@ -3,7 +3,7 @@ import Combine
 import SwiftUI
 
 // Music control and time-synced lyrics in an overlay that grows out of the
-// MacBook notch. It follows Spotify, the same player as the bar's widget.
+// MacBook notch. It follows Spotify.
 // Design: https://claude.ai/artifact/LZMrGNVNDMt3FAymphWWRZ ("v1 final").
 
 /// The notch's colours, from [notch.colors]; see `Config.NotchColors`.

@@ -5,7 +5,7 @@ import Foundation
 // of that app. Each pill in [layout] lists one or more entries.
 
 enum Entry {
-    static let widgets = ["workspaces", "spotify", "clock", "settings"]
+    static let widgets = ["workspaces", "clock", "settings"]
 
     static func status(_ itemId: String) -> String { "status:" + itemId }
 
@@ -90,14 +90,14 @@ extension Config.Layout {
 extension Config {
     /// The layout in use: config.toml's [layout] or, until one is saved,
     /// the bar as it was before layouts: the status items not hidden in the
-    /// old settings popup, then Spotify, the clock and the settings button.
+    /// old settings popup, then the clock and the settings button.
     var effectiveLayout: Layout {
         if let layout { return layout }
         let hidden = StatusItems.legacyHidden
         let items = StatusItems.shared.items.map(\.id).filter { !hidden.contains($0) }.map(Entry.status)
         return Layout(
             left: AeroSpace.enabled ? [["workspaces"]] : [],
-            right: (items.isEmpty ? [] : [items]) + [["spotify"], ["clock"], ["settings"]])
+            right: (items.isEmpty ? [] : [items]) + [["clock"], ["settings"]])
     }
 
     /// The entry that puts status item `itemId` in the bar, if any.

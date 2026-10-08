@@ -288,7 +288,6 @@ private struct SettingsView: View {
         return HStack(spacing: 4) {
             switch entry {
             case "clock": widgetChip("clock", ClockFormat.string(.now, config.clock.format))
-            case "spotify": widgetChip("music.note", "Spotify")
             case "settings": widgetChip("slider.horizontal.3", "Settings")
             case "workspaces": widgetChip("square.grid.2x2", "Workspaces")
             default:

@@ -5,7 +5,7 @@
 #
 # This file is the source of truth, and doubar's settings UI edits it too:
 # dragging items rewrites [layout]; the Bar tab and the built-in widgets'
-# right-click menus replace values in [bar], [clock] and [spotify] in place
+# right-click menus replace values in [bar] and [clock] in place
 # (each line keeps its comment). Nothing else is touched, so comments and
 # formatting elsewhere survive. If the file is a symlink (dotter), doubar
 # writes through it. Workspace labels stay in UserDefaults (suite
@@ -43,7 +43,7 @@
 height = 20              # pill height, in points
 padding = [6, 10]        # [top, horizontal] around the row of pills
 gap = 4                  # space between pills
-pill-padding = 16        # horizontal padding inside the clock's and Spotify's pills
+pill-padding = 16        # horizontal padding inside the clock's pill
 font = { family = "system", size = 13 }   # "system" or any installed family
 
 # Semantic colour roles shared by every widget and popup.
@@ -59,7 +59,7 @@ icon = "foreground"          # status items' grey parts, with tint = "palette"
 # Widgets in each group, drawn left to right. Unknown names are skipped.
 # Each entry is its own pill:
 #
-#   "spotify", "clock"                 a widget ("workspaces" too, with AeroSpace)
+#   "clock"                            a widget ("workspaces" too, with AeroSpace)
 #   "status:<app id>/<name>"           one status item, e.g.
 #                                      "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi"
 #   "status:<app id>"                  every item of one app, e.g. "status:eu.exelban.Stats"
@@ -73,7 +73,7 @@ icon = "foreground"          # status items' grey parts, with tint = "palette"
 # shows when you hover an item;
 # `doubar emit status-item id=<id>` takes the same ids. An entry whose app
 # isn't running is skipped and kept. With no [layout] at all, the bar shows
-# every status item, Spotify, the clock and the settings button.
+# every status item, the clock and the settings button.
 #
 # Written by the settings UI; comments inside this table are not kept.
 [layout]
@@ -83,7 +83,6 @@ right = [
     "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi",
     "status:com.apple.MenuBarAgent/com.apple.menuextra.battery",
   ],
-  "spotify",
   "clock",
   "settings",
 ]
@@ -94,12 +93,6 @@ right = [
 # The widget's own pill and text colours, any colour expression. Alone in a
 # pill it colours the pill; sharing one, just its own part.
 # style = { pill = "accent", text = "background" }
-
-[spotify]
-max-width = 240
-artwork = true                   # album art instead of a note icon
-text = "artist-title"            # "artist-title" or "title"
-# style = { pill = "mix(background, green, 15%)" }
 
 # Music controls and time-synced lyrics grown out of the MacBook notch,
 # following Spotify. Click it to expand. Lyrics come from LRCLIB (synced
@@ -132,7 +125,7 @@ fake-notch = false       # draw a 200 × 32 tab on a display without a notch
 # "palette" (white and grey parts in colors.icon, coloured parts in the
 # theme's red, yellow, green, cyan, blue or magenta nearest their hue) or
 # "mono" (everything in colors.accent, coloured parts at half strength so a
-# chart's line stays apart from its box; the clock, Spotify and the
+# chart's line stays apart from its box; the clock and the
 # settings button turn accent too, unless they have a style).
 tint = "none"
 
