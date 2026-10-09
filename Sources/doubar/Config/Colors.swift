@@ -4,7 +4,7 @@ import SwiftUI
 ///
 ///   "#261d35", "#261d35cc"           a literal colour, alpha optional
 ///   "accent"                         a palette key from theme.toml
-///   "foreground/12%"                 any colour at 12% of its opacity
+///   "foreground/12%", "#000000/38%"  any colour at 12% of its opacity
 ///   "mix(background, accent, 20%)"   a blend, as dotter's `mix` helper
 ///
 /// Palette values are themselves expressions, usually plain hex.
@@ -32,12 +32,24 @@ struct RGBA: Equatable {
         RGBA(r: r + (other.r - r) * t, g: g + (other.g - g) * t, b: b + (other.b - b) * t, a: a + (other.a - a) * t)
     }
 
+    /// WCAG relative luminance, ignoring alpha.
+    var luminance: Double {
+        let lin = { (v: Double) in v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    /// "#rrggbbaa".
+    var hex: String {
+        let byte = { (v: Double) in String(format: "%02x", Int((min(max(v, 0), 1) * 255).rounded())) }
+        return "#" + byte(r) + byte(g) + byte(b) + byte(a)
+    }
+
     /// Resolve `expression` against `palette`, or nil when it doesn't parse
     /// or names a key the palette lacks.
     static func resolve(_ expression: String, palette: [String: String], depth: Int = 0) -> RGBA? {
         guard depth < 8 else { return nil }
         let e = expression.trimmingCharacters(in: .whitespaces)
-        if e.hasPrefix("#") { return RGBA(hex: e) }
+        if e.hasPrefix("#"), !e.contains("/") { return RGBA(hex: e) }
         if e.hasPrefix("mix("), e.hasSuffix(")") {
             let args = splitArgs(e.dropFirst(4).dropLast())
             guard args.count == 3, let a = resolve(args[0], palette: palette, depth: depth + 1),

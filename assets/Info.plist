@@ -22,5 +22,16 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>doubar asks Spotify what is playing.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>mobilecdn.kugou.com</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 </dict>
 </plist>

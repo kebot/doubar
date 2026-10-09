@@ -14,10 +14,9 @@ struct EntryMenu: View {
     var body: some View {
         switch key {
         case "clock": ClockMenu(anchor: anchor)
-        case "spotify": SpotifyMenu()
         default: EmptyView()
         }
-        if key == "clock" || key == "spotify" {
+        if key == "clock" {
             StyleMenu(widget: key)
         }
         if key.hasPrefix("status:") {
@@ -56,38 +55,6 @@ private struct ClockMenu: View {
                 config.set("clock", "format", pattern.isEmpty ? nil : .string(pattern))
             }
         }
-        Divider()
-    }
-}
-
-private struct SpotifyMenu: View {
-    // Observed, or SwiftUI keeps showing the menu as it was first built.
-    @ObservedObject private var config = Config.shared
-    private static let widths = [160, 240, 320, 480]
-
-    var body: some View {
-        let options = config.spotify
-        Toggle("Show Artwork", isOn: Binding(
-            get: { options.artwork },
-            set: { config.set("spotify", "artwork", .bool($0)) }))
-        Picker("Text", selection: Binding(
-            get: { options.text },
-            set: { config.set("spotify", "text", .string($0.rawValue)) }
-        )) {
-            Text("Artist and Title").tag(Config.SpotifyText.artistTitle)
-            Text("Title Only").tag(Config.SpotifyText.title)
-        }
-        .pickerStyle(.inline)
-        let width = Int(options.maxWidth)
-        Picker("Maximum Width", selection: Binding(
-            get: { width },
-            set: { config.set("spotify", "max-width", .int($0)) }
-        )) {
-            ForEach(Self.widths.contains(width) ? Self.widths : (Self.widths + [width]).sorted(), id: \.self) {
-                Text("\($0) pt").tag($0)
-            }
-        }
-        .pickerStyle(.menu)
         Divider()
     }
 }

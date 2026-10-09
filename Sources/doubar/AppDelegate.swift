@@ -5,8 +5,10 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// One bar per display, keyed by CGDirectDisplayID.
     private var bars: [CGDirectDisplayID: BarWindow] = [:]
+    private var notches: [CGDirectDisplayID: NotchPanel] = [:]
     private var reassertWork: [DispatchWorkItem] = []
     private var barSize: AnyCancellable?
+    private var notchPlacement: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Depending on what launches doubar, the process can come up with
@@ -37,6 +39,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .dropFirst()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in MainActor.assumeIsolated { self?.syncBars() } }
+        // [notch] enabled and island decide which displays get one.
+        notchPlacement = Config.shared.$notch
+            .map { [$0.enabled, $0.island] }
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.syncNotch(NSScreen.screens) } }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -113,6 +122,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             log("display \(id) gone, closing its bar")
             bar.close()
             bars[id] = nil
+        }
+
+        // AppKit calls the delegate on the main thread.
+        MainActor.assumeIsolated { syncNotch(screens) }
+    }
+
+    /// One notch panel per display: the notch on a display that has one,
+    /// and with `[notch] island` the centred version on every other.
+    @MainActor
+    private func syncNotch(_ screens: [NSScreen]) {
+        let config = Config.shared.notch
+        var sites: [CGDirectDisplayID: NotchSite] = [:]
+        if config.enabled {
+            for screen in screens {
+                guard let id = screen.displayID, screen.notchSize != nil || config.island else { continue }
+                sites[id] = NotchSite(screenFrame: screen.frame, hardware: screen.notchSize)
+            }
+        }
+        Notch.shared.sites = sites
+        for (id, site) in sites {
+            if let panel = notches[id] {
+                panel.place(site)
+            } else {
+                log("creating notch on display \(id) \(site.hardware.map { "notch=\($0)" } ?? "without a notch")")
+                notches[id] = NotchPanel(site: site)
+            }
+        }
+        for (id, panel) in notches where sites[id] == nil {
+            panel.close()
+            notches[id] = nil
         }
     }
 }

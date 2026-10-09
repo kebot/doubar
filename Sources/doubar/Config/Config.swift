@@ -36,15 +36,41 @@ final class Config: ObservableObject {
         var style = Style()
     }
 
-    enum SpotifyText: String, CaseIterable {
-        case artistTitle = "artist-title", title
+    /// [notch]: the music overlay grown out of the MacBook notch.
+    struct Notch: Equatable {
+        var enabled = true
+        /// Seconds.
+        var collapseDelay = 1.5
+        /// The current lyric line under the camera while collapsed.
+        var lyricPeek = true
+        /// Also show it at the top centre of every display without a notch.
+        var island = true
+        /// Without a notch: the current lyric line in the middle of the top row
+        /// while collapsed.
+        var centerLyric = true
+        /// Liquid Glass below the top row (macOS 26+); the top row stays
+        /// black to match the camera housing.
+        var glass = true
+        var colors = NotchColors()
     }
 
-    struct Spotify: Equatable {
-        var maxWidth: CGFloat = 240
-        var artwork = true
-        var text = SpotifyText.artistTitle
-        var style = Style()
+    /// [notch.colors]. The body is black (or dark glass), so these resolve
+    /// against a palette whose `foreground` is the lighter of the theme's
+    /// foreground and background, `background` the darker, and whose
+    /// `accent` is lifted when too dark for black.
+    struct NotchColors: Equatable {
+        var text = Color.white
+        var secondary = Color.white.opacity(0.6)
+        var track = Color.white.opacity(0.16)
+        var hover = Color.white.opacity(0.12)
+        var accent = Color.purple
+        var glow = Color.purple.opacity(0.6)
+        var loved = Color.red
+        /// Over the cover art.
+        var scrim = Color.black.opacity(0.38)
+        var icon = Color.white
+        /// The Liquid Glass tint below the top row.
+        var glass = Color.black.opacity(0.6)
     }
 
     /// How status items are coloured. Their pictures have a transparent
@@ -134,8 +160,8 @@ final class Config: ObservableObject {
     /// `effectiveLayout`).
     @Published private(set) var layout: Layout?
     @Published private(set) var clock = Clock()
-    @Published private(set) var spotify = Spotify()
     @Published private(set) var workspacesStyle = Style()
+    @Published private(set) var notch = Notch()
     @Published private(set) var iconTint = IconTint.original
     /// A built-in palette from [theme] name, or nil to use theme.toml.
     @Published private(set) var themeName: String?
@@ -176,6 +202,8 @@ final class Config: ObservableObject {
     /// theme.toml's palette.
     private var filePalette: [String: String] = [:]
     private var roles = defaultRoles
+    /// [notch.colors] as written.
+    private var notchRoles: [String: TomlValue] = [:]
     private var configError: String?
     private var themeError: String?
     private var stamps: [URL: FileStamp] = [:]
@@ -314,13 +342,17 @@ final class Config: ObservableObject {
         let c = doc["clock"]
         set(\.clock, Clock(format: c?["format"]?.string, style: Self.style(c)))
 
-        let s = doc["spotify"]
-        var spotify = Spotify()
-        spotify.maxWidth = clamp(s?["max-width"]?.number, 40...2000) ?? spotify.maxWidth
-        spotify.artwork = s?["artwork"]?.bool ?? spotify.artwork
-        spotify.text = s?["text"]?.string.flatMap(SpotifyText.init) ?? spotify.text
-        spotify.style = Self.style(s)
-        set(\.spotify, spotify)
+        let n = doc["notch"]
+        var notch = Notch()
+        notch.enabled = n?["enabled"]?.bool ?? notch.enabled
+        notch.collapseDelay = (clamp(n?["collapse-delay"]?.number, 0...5000)).map { Double($0) / 1000 } ?? notch.collapseDelay
+        notch.lyricPeek = n?["lyric-peek"]?.bool ?? notch.lyricPeek
+        notch.island = n?["island"]?.bool ?? notch.island
+        notch.centerLyric = n?["center-lyric"]?.bool ?? notch.centerLyric
+        notch.glass = n?["glass"]?.bool ?? notch.glass
+        notchRoles = n?["colors"]?.table ?? [:]
+        set(\.notch, notch)
+        updateNotchColors()
 
         set(\.workspacesStyle, Self.style(doc["workspaces"]))
         set(\.iconTint, doc["status-items"]?["tint"]?.string.flatMap(IconTint.init) ?? .original)
@@ -338,11 +370,13 @@ final class Config: ObservableObject {
         v.map { min(max(CGFloat($0), range.lowerBound), range.upperBound) }
     }
 
+    /// Unknown names (a removed widget, say) are dropped.
     private static func pills(_ v: TomlValue?) -> [[String]] {
-        (v?.array ?? []).compactMap { item in
-            if let s = item.string { return [s] }
-            let group = item.array?.compactMap(\.string) ?? []
-            return group.isEmpty ? nil : group
+        let known = { (s: String) in Entry.isWidget(s) || s.hasPrefix("status:") }
+        return (v?.array ?? []).compactMap { item in
+            let group = item.string.map { [$0] } ?? item.array?.compactMap(\.string) ?? []
+            let entries = group.filter(known)
+            return entries.isEmpty ? nil : entries
         }
     }
 
@@ -354,6 +388,43 @@ final class Config: ObservableObject {
 
     private func updateColors() {
         set(\.colors, Self.resolveColors(roles, palette))
+        updateNotchColors()
+    }
+
+    private func updateNotchColors() {
+        let fg = RGBA.resolve("foreground", palette: palette) ?? RGBA(r: 1, g: 1, b: 1)
+        let bg = RGBA.resolve("background", palette: palette) ?? RGBA(r: 0, g: 0, b: 0)
+        let accent = RGBA.resolve("accent", palette: palette) ?? RGBA(r: 0.64, g: 0.55, b: 0.95)
+        var p = palette
+        p["foreground"] = (fg.luminance >= bg.luminance ? fg : bg).hex
+        // And "background" the darker, so the glass tint stays dark under
+        // light text on a light theme too.
+        p["background"] = (fg.luminance >= bg.luminance ? bg : fg).hex
+        p["accent"] = (accent.luminance < 0.12 ? accent.mixed(with: RGBA(r: 1, g: 1, b: 1), 0.25) : accent).hex
+        // "hover" names [colors].hover, read against the notch's foreground.
+        p["hover"] = roles["hover"] ?? Self.defaultRoles["hover"]!
+
+        let cover = notchRoles["cover"]
+        func role(_ value: TomlValue?, _ fallback: String, _ name: String) -> Color {
+            if let expr = value?.string {
+                if let c = RGBA.resolve(expr, palette: p) { return c.color }
+                log("notch.colors.\(name): can't resolve \"\(expr)\"; using the default")
+            }
+            return RGBA.resolve(fallback, palette: p)?.color ?? .gray
+        }
+        var c = NotchColors()
+        c.text = role(notchRoles["text"], "foreground", "text")
+        c.secondary = role(notchRoles["text-secondary"], "foreground/60%", "text-secondary")
+        c.track = role(notchRoles["track"], "foreground/16%", "track")
+        c.hover = role(notchRoles["hover"], "hover", "hover")
+        c.accent = role(notchRoles["accent"], "accent", "accent")
+        c.glow = role(notchRoles["glow"], "accent/60%", "glow")
+        c.loved = role(notchRoles["loved"], "#f2545b", "loved")
+        c.scrim = role(cover?["scrim"], "#000000/38%", "cover.scrim")
+        c.icon = role(cover?["icon"], "#ffffff", "cover.icon")
+        c.glass = role(notchRoles["glass"], "background/60%", "glass")
+        guard notch.colors != c else { return }
+        notch.colors = c
     }
 
     private static func resolveColors(_ roles: [String: String], _ palette: [String: String]) -> Colors {
@@ -378,7 +449,6 @@ final class Config: ObservableObject {
     func style(of widget: String) -> Style {
         switch widget {
         case "clock": clock.style
-        case "spotify": spotify.style
         case "workspaces": workspacesStyle
         default: Style()
         }
@@ -505,7 +575,7 @@ final class Config: ObservableObject {
                 let all = builtinPalette.merging(chosen) { $1 }
                 var exprs: [(String, String)] = []
                 for (k, v) in doc["colors"]?.table ?? [:] { if let s = v.string { exprs.append(("colors.\(k)", s)) } }
-                for w in ["clock", "spotify", "workspaces"] {
+                for w in ["clock", "workspaces"] {
                     for k in ["pill", "text"] {
                         if let s = doc[w]?["style"]?[k]?.string { exprs.append(("\(w).style.\(k)", s)) }
                     }

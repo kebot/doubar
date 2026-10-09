@@ -5,7 +5,7 @@
 #
 # This file is the source of truth, and doubar's settings UI edits it too:
 # dragging items rewrites [layout]; the Bar tab and the built-in widgets'
-# right-click menus replace values in [bar], [clock] and [spotify] in place
+# right-click menus replace values in [bar] and [clock] in place
 # (each line keeps its comment). Nothing else is touched, so comments and
 # formatting elsewhere survive. If the file is a symlink (dotter), doubar
 # writes through it. Workspace labels stay in UserDefaults (suite
@@ -43,7 +43,7 @@
 height = 20              # pill height, in points
 padding = [6, 10]        # [top, horizontal] around the row of pills
 gap = 4                  # space between pills
-pill-padding = 16        # horizontal padding inside the clock's and Spotify's pills
+pill-padding = 16        # horizontal padding inside the clock's pill
 font = { family = "system", size = 13 }   # "system" or any installed family
 
 # Semantic colour roles shared by every widget and popup.
@@ -59,7 +59,7 @@ icon = "foreground"          # status items' grey parts, with tint = "palette"
 # Widgets in each group, drawn left to right. Unknown names are skipped.
 # Each entry is its own pill:
 #
-#   "spotify", "clock"                 a widget ("workspaces" too, with AeroSpace)
+#   "clock"                            a widget ("workspaces" too, with AeroSpace)
 #   "status:<app id>/<name>"           one status item, e.g.
 #                                      "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi"
 #   "status:<app id>"                  every item of one app, e.g. "status:eu.exelban.Stats"
@@ -73,7 +73,7 @@ icon = "foreground"          # status items' grey parts, with tint = "palette"
 # shows when you hover an item;
 # `doubar emit status-item id=<id>` takes the same ids. An entry whose app
 # isn't running is skipped and kept. With no [layout] at all, the bar shows
-# every status item, Spotify, the clock and the settings button.
+# every status item, the clock and the settings button.
 #
 # Written by the settings UI; comments inside this table are not kept.
 [layout]
@@ -83,7 +83,6 @@ right = [
     "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi",
     "status:com.apple.MenuBarAgent/com.apple.menuextra.battery",
   ],
-  "spotify",
   "clock",
   "settings",
 ]
@@ -95,11 +94,35 @@ right = [
 # pill it colours the pill; sharing one, just its own part.
 # style = { pill = "accent", text = "background" }
 
-[spotify]
-max-width = 240
-artwork = true                   # album art instead of a note icon
-text = "artist-title"            # "artist-title" or "title"
-# style = { pill = "mix(background, green, 15%)" }
+# Music controls and time-synced lyrics grown out of the MacBook notch,
+# following Spotify. Clicking it steps through expanded, collapsed, and
+# collapsed with the current lyric line (that last choice is lyric-peek).
+# Lyrics (synced only) come from NetEase, Kugou, LRCLIB and LrcApi
+# (api.lrc.cx), searched with the track's title and artist; the version
+# whose title, artist and length match best wins. 红心 and 垃圾桶 are kept locally: likes don't
+# reach Spotify's Liked Songs, and banned tracks are skipped whenever they
+# start.
+[notch]
+enabled = true
+collapse-delay = 1500    # ms the pointer must stay away before it collapses
+lyric-peek = true        # current line under the camera; clicking the notch sets it
+island = true            # the same at the top centre of displays without a notch
+center-lyric = true      # there, the lyric line in the middle of the top row; clicking sets it
+glass = true             # Liquid Glass below the top row (macOS 26+)
+
+# Optional. The body is black (or glass), so "foreground" here is the
+# lighter of the theme's foreground and background, "background" the
+# darker, and "accent" is lifted when too dark to read on black.
+# [notch.colors]
+# text = "foreground"
+# text-secondary = "foreground/60%"
+# track = "foreground/16%"
+# hover = "hover"
+# accent = "accent"
+# glow = "accent/60%"
+# loved = "#f2545b"
+# cover = { scrim = "#000000/38%", icon = "#ffffff" }
+# glass = "background/60%"     # Liquid Glass tint, with glass = true
 
 # [workspaces]
 # style = { pill = "lighter_background" }
@@ -109,7 +132,7 @@ text = "artist-title"            # "artist-title" or "title"
 # "palette" (white and grey parts in colors.icon, coloured parts in the
 # theme's red, yellow, green, cyan, blue or magenta nearest their hue) or
 # "mono" (everything in colors.accent, coloured parts at half strength so a
-# chart's line stays apart from its box; the clock, Spotify and the
+# chart's line stays apart from its box; the clock and the
 # settings button turn accent too, unless they have a style).
 tint = "none"
 

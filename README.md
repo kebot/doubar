@@ -5,7 +5,7 @@
 ⚠️ IT'S HIGHLY WIP, NOT RECOMMENDED FOR AVERAGE USER
 
 A native macOS bar written in Swift (AppKit + SwiftUI): AeroSpace workspaces,
-Spotify now-playing and a clock.
+a clock, and Spotify controls with synced lyrics in the notch.
 
 ## Get started
 
@@ -42,6 +42,23 @@ exits. It never starts a bar itself.
   to jump to it. `doubar emit peek workspace=3` opens a preview from a key
   binding or script. Previews need Screen Recording permission; without it
   they show app icons only.
+
+## The notch
+
+On a MacBook with a notch, the notch grows into Spotify controls with
+time-synced lyrics. Click it to expand; set it up under `[notch]` in
+config.toml (see `docs/config.toml`).
+
+- Spotify is asked what is playing through AppleScript, so macOS asks once
+  for permission to control Spotify. doubar never launches Spotify.
+- Lyrics are looked up on NetEase Cloud Music, Kugou, [LRCLIB](https://lrclib.net)
+  and [LrcApi](https://github.com/HisAtri/LrcApi). Each is sent the song's title
+  and artist; the version whose title, artist and length match best wins.
+  Only synced lyrics are shown: a song with plain-text lyrics only shows
+  none. Lyrics are kept until doubar quits; a song without any is looked up
+  again after 30 minutes.
+- 红心 (like) and 垃圾桶 (ban) are kept by doubar, not Spotify: likes don't
+  reach your Liked Songs, and a banned track is skipped whenever it starts.
 
 ## Similar Projects
 
