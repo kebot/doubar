@@ -40,17 +40,24 @@ final class Config: ObservableObject {
     struct Notch: Equatable {
         var enabled = true
         /// Seconds.
-        var collapseDelay = 0.6
+        var collapseDelay = 1.5
         /// The current lyric line under the camera while collapsed.
         var lyricPeek = true
-        /// Draw a 200 × 32 tab on a display without a notch.
-        var fakeNotch = false
+        /// Also show it at the top centre of every display without a notch.
+        var island = true
+        /// Without a notch: the current lyric line in the middle of the top row
+        /// while collapsed.
+        var centerLyric = true
+        /// Liquid Glass below the top row (macOS 26+); the top row stays
+        /// black to match the camera housing.
+        var glass = true
         var colors = NotchColors()
     }
 
-    /// [notch.colors]. The body is always black, so these resolve against
-    /// a palette whose `foreground` is the lighter of the theme's foreground
-    /// and background, and whose `accent` is lifted when too dark for black.
+    /// [notch.colors]. The body is black (or dark glass), so these resolve
+    /// against a palette whose `foreground` is the lighter of the theme's
+    /// foreground and background, `background` the darker, and whose
+    /// `accent` is lifted when too dark for black.
     struct NotchColors: Equatable {
         var text = Color.white
         var secondary = Color.white.opacity(0.6)
@@ -62,6 +69,8 @@ final class Config: ObservableObject {
         /// Over the cover art.
         var scrim = Color.black.opacity(0.38)
         var icon = Color.white
+        /// The Liquid Glass tint below the top row.
+        var glass = Color.black.opacity(0.6)
     }
 
     /// How status items are coloured. Their pictures have a transparent
@@ -338,7 +347,9 @@ final class Config: ObservableObject {
         notch.enabled = n?["enabled"]?.bool ?? notch.enabled
         notch.collapseDelay = (clamp(n?["collapse-delay"]?.number, 0...5000)).map { Double($0) / 1000 } ?? notch.collapseDelay
         notch.lyricPeek = n?["lyric-peek"]?.bool ?? notch.lyricPeek
-        notch.fakeNotch = n?["fake-notch"]?.bool ?? notch.fakeNotch
+        notch.island = n?["island"]?.bool ?? notch.island
+        notch.centerLyric = n?["center-lyric"]?.bool ?? notch.centerLyric
+        notch.glass = n?["glass"]?.bool ?? notch.glass
         notchRoles = n?["colors"]?.table ?? [:]
         set(\.notch, notch)
         updateNotchColors()
@@ -386,6 +397,9 @@ final class Config: ObservableObject {
         let accent = RGBA.resolve("accent", palette: palette) ?? RGBA(r: 0.64, g: 0.55, b: 0.95)
         var p = palette
         p["foreground"] = (fg.luminance >= bg.luminance ? fg : bg).hex
+        // And "background" the darker, so the glass tint stays dark under
+        // light text on a light theme too.
+        p["background"] = (fg.luminance >= bg.luminance ? bg : fg).hex
         p["accent"] = (accent.luminance < 0.12 ? accent.mixed(with: RGBA(r: 1, g: 1, b: 1), 0.25) : accent).hex
         // "hover" names [colors].hover, read against the notch's foreground.
         p["hover"] = roles["hover"] ?? Self.defaultRoles["hover"]!
@@ -408,6 +422,7 @@ final class Config: ObservableObject {
         c.loved = role(notchRoles["loved"], "#f2545b", "loved")
         c.scrim = role(cover?["scrim"], "#000000/38%", "cover.scrim")
         c.icon = role(cover?["icon"], "#ffffff", "cover.icon")
+        c.glass = role(notchRoles["glass"], "background/60%", "glass")
         guard notch.colors != c else { return }
         notch.colors = c
     }

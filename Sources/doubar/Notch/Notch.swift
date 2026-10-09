@@ -3,7 +3,8 @@ import Combine
 import SwiftUI
 
 // Music control and time-synced lyrics in an overlay that grows out of the
-// MacBook notch. It follows Spotify.
+// MacBook notch, and the same at the top centre of every other display. It
+// follows Spotify; all displays share one state.
 // Design: https://claude.ai/artifact/LZMrGNVNDMt3FAymphWWRZ ("v1 final").
 
 /// The notch's colours, from [notch.colors]; see `Config.NotchColors`.
@@ -20,33 +21,74 @@ enum NotchColors {
     static var loved: Color { c.loved }
     static var scrim: Color { c.scrim }
     static var icon: Color { c.icon }
+    static var glass: Color { c.glass }
+}
+
+/// Where one panel sits: a display, and its camera housing if it has one.
+/// A display without one gets the same overlay, top centre, with the
+/// current lyric line in the middle of the top row where the camera would be.
+struct NotchSite: Equatable {
+    var screenFrame: NSRect
+    /// nil on a display without a notch.
+    var hardware: CGSize?
+
+    var hasNotch: Bool { hardware != nil }
 }
 
 /// Sizes from the design, for a 14" MacBook Pro whose notch is 200 × 32;
-/// widths grow from the real notch, heights from its real height.
+/// widths grow from the real notch, heights from its real height. Without
+/// a notch, the middle of the top row is the lyric line's (300 pt) or
+/// nothing.
 struct NotchLayout: Equatable {
     var width: CGFloat
     var height: CGFloat
     var radius: CGFloat
+    /// The top row's height.
+    var row: CGFloat
+    /// The middle of the top row, between the wings: the camera, or the
+    /// lyric line.
+    var center: CGFloat
 
     static let lyricsHeight: CGFloat = 178
     static let footerHeight: CGFloat = 62
     static let peekHeight: CGFloat = 24
     /// The collapsed notch's progress border.
     static let border: CGFloat = 1
+    /// Without a notch: the top row, and the lyric line in its middle.
+    static let islandRow: CGFloat = 32
+    static let islandLyricWidth: CGFloat = 300
 
-    static func collapsedWidth(_ base: CGSize) -> CGFloat { base.width + 220 }
-    static func expandedWidth(_ base: CGSize) -> CGFloat { base.width + 240 }
+    /// The middle of the top row while expanded, which also sets the
+    /// expanded width.
+    private static func expandedCenter(_ site: NotchSite) -> CGFloat { site.hardware?.width ?? islandLyricWidth }
+    static func row(_ site: NotchSite) -> CGFloat { site.hardware?.height ?? islandRow }
+    static func expandedWidth(_ site: NotchSite) -> CGFloat { expandedCenter(site) + 240 }
+    /// The tallest the body gets, for sizing its panel.
+    static func maxHeight(_ site: NotchSite) -> CGFloat { row(site) + lyricsHeight + footerHeight }
 
-    static func of(base: CGSize, expanded: Bool, peek: Bool, lyrics: Bool) -> NotchLayout {
+    /// - `lyricLine`: the collapsed lyric line is on (below the camera with
+    ///   a notch, in the middle of the top row without).
+    static func of(site: NotchSite, expanded: Bool, paused: Bool, lyricLine: Bool, lyrics: Bool) -> NotchLayout {
+        let row = row(site)
         if expanded {
-            let h = base.height + (lyrics ? lyricsHeight : 0) + footerHeight
-            return NotchLayout(width: expandedWidth(base), height: h, radius: 28)
+            let h = row + (lyrics ? lyricsHeight : 0) + footerHeight
+            let center = expandedCenter(site)
+            return NotchLayout(width: center + 240, height: h, radius: 28, row: row, center: center)
         }
-        if peek {
-            return NotchLayout(width: collapsedWidth(base), height: base.height + peekHeight + 4, radius: 18)
+        // Paused: the cover alone, beside the camera or as a small tab.
+        if paused {
+            let center = site.hardware?.width ?? 0
+            return NotchLayout(width: center + (site.hasNotch ? 80 : 40), height: row, radius: 12, row: row, center: center)
         }
-        return NotchLayout(width: collapsedWidth(base), height: base.height + 2, radius: 12)
+        guard let base = site.hardware else {
+            let center = lyricLine ? islandLyricWidth : 0
+            return NotchLayout(width: center + 220, height: row + 2, radius: 12, row: row, center: center)
+        }
+        if lyricLine {
+            return NotchLayout(
+                width: base.width + 220, height: row + peekHeight + 4, radius: 18, row: row, center: base.width)
+        }
+        return NotchLayout(width: base.width + 220, height: row + 2, radius: 12, row: row, center: base.width)
     }
 }
 
@@ -54,14 +96,13 @@ struct NotchLayout: Equatable {
 final class Notch: ObservableObject {
     static let shared = Notch()
 
-    /// The hardware notch, set by the panel.
-    var base = CGSize(width: 200, height: 32)
-    /// The display the notch is on.
-    var screenFrame: NSRect = .zero
+    /// Every panel's place, by display; set by AppDelegate.
+    var sites: [CGDirectDisplayID: NotchSite] = [:]
 
     /// Something to show: a track playing, or paused for under five minutes.
     @Published private(set) var visible = false
     @Published private(set) var expanded = false
+    @Published private(set) var playing = false
     /// The current track's synced lyrics; nil while loading or when there
     /// are none.
     @Published private(set) var lines: [LyricLine]?
@@ -98,22 +139,43 @@ final class Notch: ObservableObject {
         playbackChanged()
     }
 
-    var layout: NotchLayout {
-        NotchLayout.of(base: base, expanded: expanded, peek: showsPeek, lyrics: roomForLyrics)
+    func layout(for site: NotchSite) -> NotchLayout {
+        NotchLayout.of(
+            site: site, expanded: expanded, paused: compact, lyricLine: showsLyricLine(on: site),
+            lyrics: roomForLyrics)
     }
 
-    var showsPeek: Bool { config.lyricPeek && roomForLyrics && !expanded }
+    /// Paused and collapsed: just the cover, to play.
+    var compact: Bool { !playing && !expanded }
 
-    /// The notch body in screen coordinates.
-    var frame: NSRect {
-        let l = layout
-        return NSRect(x: screenFrame.midX - l.width / 2, y: screenFrame.maxY - l.height, width: l.width, height: l.height)
+    /// Whether the collapsed lyric line is chosen on this kind of display:
+    /// `lyric-peek` with a notch, `center-lyric` without.
+    func lyricLineOn(_ site: NotchSite) -> Bool { site.hasNotch ? config.lyricPeek : config.centerLyric }
+
+    func showsLyricLine(on site: NotchSite) -> Bool { lyricLineOn(site) && roomForLyrics && !expanded && playing }
+
+    /// The body in screen coordinates.
+    func frame(for site: NotchSite) -> NSRect {
+        let l = layout(for: site)
+        let f = site.screenFrame
+        return NSRect(x: f.midX - l.width / 2, y: f.maxY - l.height, width: l.width, height: l.height)
+    }
+
+    /// Whether `point` is on any display's body.
+    func contains(_ point: NSPoint) -> Bool { sites.values.contains { frame(for: $0).contains(point) } }
+
+    /// Whether the pointer is over any display's body, or a little beyond
+    /// it, so drifting past its edge doesn't start the collapse.
+    private var pointerNear: Bool {
+        let p = NSEvent.mouseLocation
+        return sites.values.contains { frame(for: $0).insetBy(dx: -16, dy: -16).contains(p) }
     }
 
     // MARK: Playback
 
     private func playbackChanged() {
         let track = spotify.track
+        if playing != spotify.isPlaying { playing = spotify.isPlaying }
         if track?.id != trackID {
             trackID = track?.id
             if let track { trackStarted(track) }
@@ -180,6 +242,28 @@ final class Notch: ObservableObject {
 
     func expand() { setExpanded(true) }
 
+    /// A click on the body steps through expanded → collapsed without
+    /// lyrics → collapsed with the lyric line → expanded. The lyric-line
+    /// step is skipped when there's no line to show (no synced lyrics, or
+    /// paused). Which collapsed look is used is saved in config.toml per
+    /// kind of display (`lyric-peek`, `center-lyric`), and is also where
+    /// pointer-out and Esc return to.
+    func cycle(on site: NotchSite) {
+        if expanded {
+            setLyricLine(false, on: site)
+            collapse()
+        } else if !lyricLineOn(site), roomForLyrics, playing {
+            setLyricLine(true, on: site)
+        } else {
+            expand()
+        }
+    }
+
+    private func setLyricLine(_ on: Bool, on site: NotchSite) {
+        guard lyricLineOn(site) != on else { return }
+        Config.shared.set("notch", site.hasNotch ? "lyric-peek" : "center-lyric", .bool(on))
+    }
+
     func collapse() { setExpanded(false) }
 
     private func setExpanded(_ value: Bool) {
@@ -191,10 +275,11 @@ final class Notch: ObservableObject {
 
     // MARK: Pointer
 
-    /// The pointer moved: collapse a while after it leaves. Only a click
+    /// The pointer moved: collapse once it has been away from every body
+    /// for the collapse delay; coming back cancels that. Only a click
     /// expands.
-    func pointerMoved(inside: Bool) {
-        if inside {
+    func pointerMoved() {
+        if pointerNear {
             collapseWork?.cancel()
             collapseWork = nil
         } else if expanded, collapseWork == nil {
@@ -207,7 +292,7 @@ final class Notch: ObservableObject {
         collapseWork = nil
         if NSEvent.pressedMouseButtons != 0 {
             collapseWork = after(0.2) { $0.collapseUnlessHeld() }
-        } else if !frame.contains(NSEvent.mouseLocation) {
+        } else if !pointerNear {
             collapse()
         }
     }

@@ -3,10 +3,13 @@ import SwiftUI
 
 /// The notch body, top-centre in its panel. Collapsed: the cover and title
 /// in the left wing, 红心 / 垃圾桶 / 下一首 in the right, progress along the
-/// bottom border, optionally the current lyric below the camera. Expanded:
-/// the same top row, then five lyric lines, then title · artist and a
-/// progress bar.
+/// bottom border, optionally the current lyric line: below the camera, or
+/// on a display without a notch in the middle of the top row. Expanded: the
+/// same top row, then five lyric lines, then title · artist and a progress
+/// bar.
 struct NotchView: View {
+    let site: NotchSite
+
     @ObservedObject private var notch = Notch.shared
     @ObservedObject private var spotify = Spotify.shared
     // For the colours and lyric-peek.
@@ -23,21 +26,26 @@ struct NotchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(
             reduceMotion ? .easeInOut(duration: 0.15) : .spring(duration: 0.38, bounce: 0.25),
-            value: notch.layout)
+            value: notch.layout(for: site))
     }
 
     private func notchBody(_ track: Spotify.Track, position: Double, now: Date) -> some View {
-        let layout = notch.layout
+        let layout = notch.layout(for: site)
         let progress = track.duration > 0 ? position / track.duration : 0
         return ZStack(alignment: .top) {
-            if !notch.expanded {
+            if !notch.expanded, !notch.compact {
                 glow(layout, progress: progress)
             }
             ZStack(alignment: .top) {
-                Color.black
+                // Controls (and lyric lines) take their own clicks;
+                // everywhere else lands on the background, which steps
+                // through expanded / no lyrics / mini lyrics.
+                background(layout)
+                    .contentShape(Rectangle())
+                    .onTapGesture { notch.cycle(on: site) }
                 VStack(spacing: 0) {
                     topRow(track, layout: layout, position: position, now: now)
-                    if notch.showsPeek {
+                    if site.hasNotch, notch.showsLyricLine(on: site) {
                         peek(position: position, width: layout.width)
                             .transition(.opacity)
                     }
@@ -46,22 +54,43 @@ struct NotchView: View {
                             .transition(.opacity)
                     }
                 }
-                if !notch.expanded {
+                if !notch.expanded, !notch.compact {
                     progressBorder(layout, progress: progress)
+                        .transition(.opacity)
                 }
             }
             .frame(width: layout.width, height: layout.height, alignment: .top)
             .clipShape(NotchShape(radius: layout.radius))
             .contentShape(NotchShape(radius: layout.radius))
-            // Controls take their own clicks; the rest of the body expands.
-            .onTapGesture { notch.expand() }
+        }
+    }
+
+    /// Black, or Liquid Glass under a black top row that fades out just
+    /// below the camera, so the notch still grows out of the hardware.
+    @ViewBuilder
+    private func background(_ layout: NotchLayout) -> some View {
+        if #available(macOS 26, *), config.notch.glass {
+            let top = layout.row, fade: CGFloat = 14
+            Color.clear
+                .glassEffect(.regular.tint(NotchColors.glass), in: NotchShape(radius: layout.radius))
+                .overlay(alignment: .top) {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: top / (top + fade)),
+                            .init(color: .black.opacity(0), location: 1),
+                        ],
+                        startPoint: .top, endPoint: .bottom)
+                        .frame(height: top + fade)
+                }
+        } else {
+            Color.black
         }
     }
 
     // MARK: Top row
 
     private func topRow(_ track: Spotify.Track, layout: NotchLayout, position: Double, now: Date) -> some View {
-        let wing = (layout.width - notch.base.width) / 2
+        let wing = (layout.width - layout.center) / 2
         let liked = notch.liked.contains(track.id)
         return HStack(spacing: 0) {
             CoverButton(
@@ -69,28 +98,52 @@ struct NotchView: View {
                 // Turning with the playback position stops it while paused.
                 angle: reduceMotion ? 0 : position / 14 * 360,
                 now: now, still: reduceMotion)
-            Text(track.name)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(NotchColors.text)
-                .lineLimit(1)
-                .frame(maxWidth: max(0, wing - 41), alignment: .leading)
-                .padding(.leading, 4)
+            // Paused and collapsed shows the cover alone.
+            if !notch.compact {
+                Text(track.name)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(NotchColors.text)
+                    .lineLimit(1)
+                    .frame(maxWidth: max(0, wing - 41), alignment: .leading)
+                    .padding(.leading, 4)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
             Spacer(minLength: 0)
-            HStack(spacing: 1) {
-                IconButton(symbol: liked ? "heart.fill" : "heart", tint: liked ? NotchColors.loved : nil) {
-                    notch.toggleLiked()
+            if !notch.compact {
+                HStack(spacing: 1) {
+                    IconButton(symbol: liked ? "heart.fill" : "heart", tint: liked ? NotchColors.loved : nil) {
+                        notch.toggleLiked()
+                    }
+                    IconButton(symbol: "trash") { notch.ban() }
+                    IconButton(symbol: "forward.end.fill") { spotify.next() }
                 }
-                IconButton(symbol: "trash") { notch.ban() }
-                IconButton(symbol: "forward.end.fill") { spotify.next() }
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, 9)
-        .frame(width: layout.width, height: notch.base.height)
+        .frame(width: layout.width, height: layout.row)
+        .overlay {
+            // Without a notch, the lyric line sits where the camera would.
+            if !site.hasNotch, notch.showsLyricLine(on: site) {
+                lyricLine(position: position)
+                    .padding(.horizontal, 8)
+                    .frame(width: layout.center)
+                    .transition(.opacity)
+            }
+        }
     }
 
     // MARK: Collapsed
 
     private func peek(position: Double, width: CGFloat) -> some View {
+        lyricLine(position: position)
+            .padding(.horizontal, 22)
+            .frame(width: width, height: NotchLayout.peekHeight)
+    }
+
+    /// The line being sung, filling in time, or "…" between lines.
+    private func lyricLine(position: Double) -> some View {
         let current = notch.lines?.current(at: position).line
         return Group {
             if let current {
@@ -101,8 +154,8 @@ struct NotchView: View {
         }
         .font(.system(size: 12.5, weight: .medium))
         .lineLimit(1)
-        .padding(.horizontal, 22)
-        .frame(width: width, height: NotchLayout.peekHeight)
+        // Clicks go through to the body, which cycles the modes.
+        .allowsHitTesting(false)
     }
 
     /// The 1 pt bottom border: unplayed in `track`, played in the accent.
@@ -145,7 +198,7 @@ struct NotchView: View {
         }
         // At its final width throughout, so nothing reflows while the notch
         // grows; the body clips it.
-        .frame(width: NotchLayout.expandedWidth(notch.base))
+        .frame(width: NotchLayout.expandedWidth(site))
     }
 
     /// Five lines from the one just sung; click one to seek to it.
@@ -217,6 +270,7 @@ struct NotchView: View {
         }
         .padding(EdgeInsets(top: 8, leading: 22, bottom: 14, trailing: 22))
         .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(false)
     }
 
     /// m:ss
