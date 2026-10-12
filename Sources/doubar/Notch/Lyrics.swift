@@ -82,6 +82,11 @@ private struct Candidate {
     let duration: Double?
     /// The LRC text, or nil when there is none.
     let load: () async -> String?
+    /// Other names the provider knows the song and the artist by, such as
+    /// NetEase's English translation of a Chinese title, which is what
+    /// Spotify may show.
+    var otherTitles: [String] = []
+    var otherArtists: [String] = []
 }
 
 private typealias Provider = (LyricsQuery) async throws -> [Candidate]
@@ -103,6 +108,13 @@ private enum LyricsSearch {
             bare.artist = ""
             queries.append(bare)
         }
+        // Spotify may have a song in traditional characters and a provider
+        // in simplified (or the other way); search in both.
+        queries = queries.flatMap { q in
+            [q, Match.script(q, simplified: true), Match.script(q, simplified: false)]
+        }
+        var searched = Set<[String]>()
+        queries = queries.filter { searched.insert([$0.title, $0.artist]).inserted }
 
         let lists: [(Int, [Candidate]?)] = await withTaskGroup(of: (Int, [Candidate]?).self) { group in
             for (p, (name, provider)) in providers.enumerated() {
@@ -160,17 +172,20 @@ private enum LyricsSearch {
         let songs = ((data as? [String: Any])?["result"] as? [String: Any])?["songs"] as? [[String: Any]] ?? []
         return songs.compactMap { s in
             guard let id = s["id"].map({ "\($0)" }) else { return nil }
+            let artists = s["ar"] as? [[String: Any]] ?? []
             return Candidate(
                 source: "netease",
                 title: s["name"] as? String ?? "",
-                artist: (s["ar"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "),
+                artist: artists.compactMap { $0["name"] as? String }.joined(separator: " / "),
                 album: (s["al"] as? [String: Any])?["name"] as? String ?? "",
                 duration: (s["dt"] as? Double).map { $0 / 1000 },
                 load: {
                     let l = try? await HTTP.json("https://music.163.com/api/song/lyric",
                                                  ["lv": "-1", "tv": "-1", "id": id], headers: neteaseHeaders)
                     return ((l as? [String: Any])?["lrc"] as? [String: Any])?["lyric"] as? String
-                })
+                },
+                otherTitles: ["tns", "alia"].flatMap { s[$0] as? [String] ?? [] },
+                otherArtists: artists.flatMap { a in ["tns", "alias"].flatMap { a[$0] as? [String] ?? [] } })
         }
     }
 
@@ -270,9 +285,11 @@ private enum HTTP {
 private enum Match {
     /// nil when the candidate is clearly another song.
     static func score(_ q: LyricsQuery, _ c: Candidate) -> Double? {
-        let title = max(similarity(q.title, c.title), similarity(baseTitle(q.title), baseTitle(c.title)))
+        let title = ([c.title] + c.otherTitles).map { t in
+            max(similarity(q.title, t), similarity(baseTitle(q.title), baseTitle(t)))
+        }.max() ?? 0
         guard title >= 0.5 else { return nil }
-        let artist = artistSimilarity(q.artist, c.artist)
+        let artist = ([c.artist] + c.otherArtists).map { artistSimilarity(q.artist, $0) }.max() ?? 0
         var s = title * 3 + artist * 1.5
         if !q.album.isEmpty, !c.album.isEmpty { s += similarity(q.album, c.album) * 0.5 }
         if let d = c.duration, d > 0 {
@@ -300,7 +317,22 @@ private enum Match {
             .trimmingCharacters(in: .whitespaces)
     }
 
+    private static let toSimplified = StringTransform("Traditional-Simplified")
+    private static let toTraditional = StringTransform("Simplified-Traditional")
+
+    /// The query with its title and artist in simplified or traditional
+    /// Chinese characters.
+    static func script(_ q: LyricsQuery, simplified: Bool) -> LyricsQuery {
+        let t = simplified ? toSimplified : toTraditional
+        var out = q
+        out.title = q.title.applyingTransform(t, reverse: false) ?? q.title
+        out.artist = q.artist.applyingTransform(t, reverse: false) ?? q.artist
+        return out
+    }
+
+    /// Lowercased, simplified Chinese, without spaces, punctuation or symbols.
     private static func normalize(_ s: String) -> [Character] {
+        let s = s.applyingTransform(toSimplified, reverse: false) ?? s
         let scalars = s.precomposedStringWithCompatibilityMapping.lowercased().unicodeScalars.filter { u in
             switch u.properties.generalCategory {
             case .spaceSeparator, .lineSeparator, .paragraphSeparator, .control,
