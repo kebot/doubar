@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.enabled {
             for screen in screens {
                 guard let id = screen.displayID, screen.notchSize != nil || config.island else { continue }
-                sites[id] = NotchSite(screenFrame: screen.frame, hardware: screen.notchSize)
+                sites[id] = NotchSite(display: id, screenFrame: screen.frame, hardware: screen.notchSize)
             }
         }
         Notch.shared.sites = sites
