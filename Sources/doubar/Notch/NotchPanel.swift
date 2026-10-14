@@ -39,6 +39,13 @@ final class NotchPanel: NSPanel {
 
         place(site)
 
+        // Liquid Glass follows the window's appearance, not the colours drawn
+        // over it: match the theme, or a light system turns the dark notch's
+        // glass pale (and a dark one the light notch's murky).
+        Config.shared.$isDark.removeDuplicates().sink { [weak self] dark in
+            self?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        }.store(in: &subscriptions)
+
         let notch = Notch.shared
         notch.$visible.removeDuplicates().sink { [weak self] visible in
             if visible { self?.orderFrontRegardless() } else { self?.orderOut(nil) }
@@ -49,13 +56,17 @@ final class NotchPanel: NSPanel {
         }.store(in: &subscriptions)
 
         monitor([.mouseMoved, .leftMouseDragged]) { [weak self] _ in self?.pointerMoved() }
-        monitor([.leftMouseDown, .rightMouseDown]) { _ in
-            if notch.expanded, !notch.contains(NSEvent.mouseLocation) { notch.collapse() }
+        // A click anywhere off this display's body collapses it.
+        monitor([.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let site = self?.site else { return }
+            if notch.isExpanded(site), !notch.frame(for: site).contains(NSEvent.mouseLocation) {
+                notch.collapse(site)
+            }
         }
         // Esc. Global key events need Accessibility, which doubar already
         // asks for to press status items.
-        monitor([.keyDown]) { event in
-            if event.keyCode == 53 { notch.collapse() }
+        monitor([.keyDown]) { [weak self] event in
+            if event.keyCode == 53, let site = self?.site { notch.collapse(site) }
         }
     }
 

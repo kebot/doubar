@@ -33,7 +33,7 @@ struct NotchView: View {
         let layout = notch.layout(for: site)
         let progress = track.duration > 0 ? position / track.duration : 0
         return ZStack(alignment: .top) {
-            if !notch.expanded, !notch.compact {
+            if !notch.isExpanded(site), !notch.compact(on: site) {
                 glow(layout, progress: progress)
             }
             ZStack(alignment: .top) {
@@ -49,12 +49,12 @@ struct NotchView: View {
                         peek(position: position, width: layout.width)
                             .transition(.opacity)
                     }
-                    if notch.expanded {
+                    if notch.isExpanded(site) {
                         expanded(track, position: position, progress: progress)
                             .transition(.opacity)
                     }
                 }
-                if !notch.expanded, !notch.compact {
+                if !notch.isExpanded(site), !notch.compact(on: site) {
                     progressBorder(layout, progress: progress)
                         .transition(.opacity)
                 }
@@ -69,7 +69,9 @@ struct NotchView: View {
     /// below the camera, so the notch still grows out of the hardware.
     @ViewBuilder
     private func background(_ layout: NotchLayout) -> some View {
-        if #available(macOS 26, *), config.notch.glass {
+        if !config.isDark {
+            lightBackground(layout)
+        } else if #available(macOS 26, *), config.notch.glass {
             let top = layout.row, fade: CGFloat = 14
             Color.clear
                 .glassEffect(.regular.tint(NotchColors.glass), in: NotchShape(radius: layout.radius))
@@ -87,6 +89,26 @@ struct NotchView: View {
         }
     }
 
+    /// A light theme's: light glass (or white under the glass tint) all the
+    /// way up, with only the camera housing black, its top corners flaring
+    /// into the glass so it doesn't sit there as a hard block.
+    @ViewBuilder
+    private func lightBackground(_ layout: NotchLayout) -> some View {
+        ZStack(alignment: .top) {
+            if #available(macOS 26, *), config.notch.glass {
+                Color.clear
+                    .glassEffect(.regular.tint(NotchColors.glass), in: NotchShape(radius: layout.radius))
+            } else {
+                Color.white.overlay(NotchColors.glass)
+            }
+            if let hardware = site.hardware {
+                CameraHousing(flare: CameraHousing.flare)
+                    .fill(.black)
+                    .frame(width: hardware.width + CameraHousing.flare * 2, height: hardware.height)
+            }
+        }
+    }
+
     // MARK: Top row
 
     private func topRow(_ track: Spotify.Track, layout: NotchLayout, position: Double, now: Date) -> some View {
@@ -99,7 +121,7 @@ struct NotchView: View {
                 angle: reduceMotion ? 0 : position / 14 * 360,
                 now: now, still: reduceMotion)
             // Paused and collapsed shows the cover alone.
-            if !notch.compact {
+            if !notch.compact(on: site) {
                 Text(track.name)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(NotchColors.text)
@@ -110,7 +132,7 @@ struct NotchView: View {
                     .transition(.opacity)
             }
             Spacer(minLength: 0)
-            if !notch.compact {
+            if !notch.compact(on: site) {
                 HStack(spacing: 1) {
                     IconButton(symbol: liked ? "heart.fill" : "heart", tint: liked ? NotchColors.loved : nil) {
                         notch.toggleLiked()
@@ -301,6 +323,33 @@ struct NotchShape: Shape {
         let r = min(radius, rect.height, rect.width / 2)
         return UnevenRoundedRectangle(bottomLeadingRadius: r, bottomTrailingRadius: r, style: .circular)
             .path(in: rect)
+    }
+}
+
+/// The camera housing, drawn over a light body: `flare` pt wider on each
+/// side than the hardware, its top corners curving out in concave arcs the
+/// way a notch meets the screen edge. The bottom corners are tighter than
+/// the hardware's, so no light shows around them.
+private struct CameraHousing: Shape {
+    static let flare: CGFloat = 18
+    var flare: CGFloat
+    var radius: CGFloat = 6
+
+    func path(in rect: CGRect) -> Path {
+        let l = rect.minX + flare, r = rect.maxX - flare, top = rect.minY, b = rect.maxY
+        let f = min(flare, rect.height - radius)
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: top))
+        p.addLine(to: CGPoint(x: rect.maxX, y: top))
+        p.addQuadCurve(to: CGPoint(x: r, y: top + f), control: CGPoint(x: r, y: top))
+        p.addLine(to: CGPoint(x: r, y: b - radius))
+        p.addQuadCurve(to: CGPoint(x: r - radius, y: b), control: CGPoint(x: r, y: b))
+        p.addLine(to: CGPoint(x: l + radius, y: b))
+        p.addQuadCurve(to: CGPoint(x: l, y: b - radius), control: CGPoint(x: l, y: b))
+        p.addLine(to: CGPoint(x: l, y: top + f))
+        p.addQuadCurve(to: CGPoint(x: rect.minX, y: top), control: CGPoint(x: l, y: top))
+        p.closeSubpath()
+        return p
     }
 }
 
