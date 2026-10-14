@@ -108,11 +108,14 @@ collapse-delay = 1500    # ms the pointer must stay away before it collapses
 lyric-peek = true        # current line under the camera; clicking the notch sets it
 island = true            # the same at the top centre of displays without a notch
 center-lyric = true      # there, the lyric line in the middle of the top row; clicking sets it
-glass = true             # Liquid Glass below the top row (macOS 26+)
+glass = true             # Liquid Glass below the top row (macOS 26+); with a light
+                         # theme it is light glass up to the camera housing
 
-# Optional. The body is black (or glass), so "foreground" here is the
-# lighter of the theme's foreground and background, "background" the
-# darker, and "accent" is lifted when too dark to read on black.
+# Optional. With a dark theme the body is black (or dark glass), so
+# "foreground" here is the lighter of the theme's foreground and background,
+# "background" the darker, and "accent" is lifted when too dark to read on
+# black. With a light theme (mode = "light") the body is light glass and all
+# three are the other way round.
 # [notch.colors]
 # text = "foreground"
 # text-secondary = "foreground/60%"

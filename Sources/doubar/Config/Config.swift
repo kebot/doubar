@@ -49,15 +49,17 @@ final class Config: ObservableObject {
         /// while collapsed.
         var centerLyric = true
         /// Liquid Glass below the top row (macOS 26+); the top row stays
-        /// black to match the camera housing.
+        /// black to match the camera housing. With a light theme the glass
+        /// is light and goes all the way up; only the housing is black.
         var glass = true
         var colors = NotchColors()
     }
 
-    /// [notch.colors]. The body is black (or dark glass), so these resolve
-    /// against a palette whose `foreground` is the lighter of the theme's
-    /// foreground and background, `background` the darker, and whose
-    /// `accent` is lifted when too dark for black.
+    /// [notch.colors]. With a dark theme the body is black (or dark glass),
+    /// so these resolve against a palette whose `foreground` is the lighter
+    /// of the theme's foreground and background, `background` the darker,
+    /// and whose `accent` is lifted when too dark for black. With a light
+    /// theme the body is light glass, and all three are the other way round.
     struct NotchColors: Equatable {
         var text = Color.white
         var secondary = Color.white.opacity(0.6)
@@ -396,11 +398,17 @@ final class Config: ObservableObject {
         let bg = RGBA.resolve("background", palette: palette) ?? RGBA(r: 0, g: 0, b: 0)
         let accent = RGBA.resolve("accent", palette: palette) ?? RGBA(r: 0.64, g: 0.55, b: 0.95)
         var p = palette
-        p["foreground"] = (fg.luminance >= bg.luminance ? fg : bg).hex
-        // And "background" the darker, so the glass tint stays dark under
-        // light text on a light theme too.
-        p["background"] = (fg.luminance >= bg.luminance ? bg : fg).hex
-        p["accent"] = (accent.luminance < 0.12 ? accent.mixed(with: RGBA(r: 1, g: 1, b: 1), 0.25) : accent).hex
+        // A dark theme's notch is black (or dark glass) under light text; a
+        // light theme's is light glass under dark text, whichever way round
+        // the palette has its foreground and background.
+        let (lighter, darker) = fg.luminance >= bg.luminance ? (fg, bg) : (bg, fg)
+        p["foreground"] = (isDark ? lighter : darker).hex
+        p["background"] = (isDark ? darker : lighter).hex
+        // And the accent moved away from the body: lifted when too dark for
+        // black, deepened when too pale for white.
+        p["accent"] = (isDark
+            ? (accent.luminance < 0.12 ? accent.mixed(with: RGBA(r: 1, g: 1, b: 1), 0.25) : accent)
+            : (accent.luminance > 0.5 ? accent.mixed(with: RGBA(r: 0, g: 0, b: 0), 0.3) : accent)).hex
         // "hover" names [colors].hover, read against the notch's foreground.
         p["hover"] = roles["hover"] ?? Self.defaultRoles["hover"]!
 

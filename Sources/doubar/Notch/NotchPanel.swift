@@ -39,6 +39,13 @@ final class NotchPanel: NSPanel {
 
         place(site)
 
+        // Liquid Glass follows the window's appearance, not the colours drawn
+        // over it: match the theme, or a light system turns the dark notch's
+        // glass pale (and a dark one the light notch's murky).
+        Config.shared.$isDark.removeDuplicates().sink { [weak self] dark in
+            self?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        }.store(in: &subscriptions)
+
         let notch = Notch.shared
         notch.$visible.removeDuplicates().sink { [weak self] visible in
             if visible { self?.orderFrontRegardless() } else { self?.orderOut(nil) }
