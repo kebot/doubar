@@ -33,7 +33,7 @@ struct NotchView: View {
         let layout = notch.layout(for: site)
         let progress = track.duration > 0 ? position / track.duration : 0
         return ZStack(alignment: .top) {
-            if !notch.expanded, !notch.compact {
+            if !notch.isExpanded(site), !notch.compact(on: site) {
                 glow(layout, progress: progress)
             }
             ZStack(alignment: .top) {
@@ -49,12 +49,12 @@ struct NotchView: View {
                         peek(position: position, width: layout.width)
                             .transition(.opacity)
                     }
-                    if notch.expanded {
+                    if notch.isExpanded(site) {
                         expanded(track, position: position, progress: progress)
                             .transition(.opacity)
                     }
                 }
-                if !notch.expanded, !notch.compact {
+                if !notch.isExpanded(site), !notch.compact(on: site) {
                     progressBorder(layout, progress: progress)
                         .transition(.opacity)
                 }
@@ -121,7 +121,7 @@ struct NotchView: View {
                 angle: reduceMotion ? 0 : position / 14 * 360,
                 now: now, still: reduceMotion)
             // Paused and collapsed shows the cover alone.
-            if !notch.compact {
+            if !notch.compact(on: site) {
                 Text(track.name)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(NotchColors.text)
@@ -132,7 +132,7 @@ struct NotchView: View {
                     .transition(.opacity)
             }
             Spacer(minLength: 0)
-            if !notch.compact {
+            if !notch.compact(on: site) {
                 HStack(spacing: 1) {
                     IconButton(symbol: liked ? "heart.fill" : "heart", tint: liked ? NotchColors.loved : nil) {
                         notch.toggleLiked()

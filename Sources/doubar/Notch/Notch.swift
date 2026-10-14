@@ -4,7 +4,8 @@ import SwiftUI
 
 // Music control and time-synced lyrics in an overlay that grows out of the
 // MacBook notch, and the same at the top centre of every other display. It
-// follows Spotify; all displays share one state.
+// follows Spotify; all displays show the same track, but each expands and
+// collapses on its own.
 // Design: https://claude.ai/artifact/LZMrGNVNDMt3FAymphWWRZ ("v1 final").
 
 /// The notch's colours, from [notch.colors]; see `Config.NotchColors`.
@@ -28,6 +29,7 @@ enum NotchColors {
 /// A display without one gets the same overlay, top centre, with the
 /// current lyric line in the middle of the top row where the camera would be.
 struct NotchSite: Equatable {
+    var display: CGDirectDisplayID
     var screenFrame: NSRect
     /// nil on a display without a notch.
     var hardware: CGSize?
@@ -97,11 +99,16 @@ final class Notch: ObservableObject {
     static let shared = Notch()
 
     /// Every panel's place, by display; set by AppDelegate.
-    var sites: [CGDirectDisplayID: NotchSite] = [:]
+    var sites: [CGDirectDisplayID: NotchSite] = [:] {
+        didSet {
+            for id in expanded where sites[id] == nil { setExpanded(false, on: id) }
+        }
+    }
 
     /// Something to show: a track playing, or paused for under five minutes.
     @Published private(set) var visible = false
-    @Published private(set) var expanded = false
+    /// The displays whose notch is expanded.
+    @Published private(set) var expanded: Set<CGDirectDisplayID> = []
     @Published private(set) var playing = false
     /// The current track's synced lyrics; nil while loading or when there
     /// are none.
@@ -122,7 +129,8 @@ final class Notch: ObservableObject {
     private var skipped: String?
     private var pausedSince: Date?
     private var pauseTimeout: DispatchWorkItem?
-    private var collapseWork: DispatchWorkItem?
+    /// Each expanded display's pending collapse.
+    private var collapseWork: [CGDirectDisplayID: DispatchWorkItem] = [:]
     private var subscriptions: Set<AnyCancellable> = []
 
     private var spotify: Spotify { .shared }
@@ -141,18 +149,20 @@ final class Notch: ObservableObject {
 
     func layout(for site: NotchSite) -> NotchLayout {
         NotchLayout.of(
-            site: site, expanded: expanded, paused: compact, lyricLine: showsLyricLine(on: site),
+            site: site, expanded: isExpanded(site), paused: compact(on: site), lyricLine: showsLyricLine(on: site),
             lyrics: roomForLyrics)
     }
 
+    func isExpanded(_ site: NotchSite) -> Bool { expanded.contains(site.display) }
+
     /// Paused and collapsed: just the cover, to play.
-    var compact: Bool { !playing && !expanded }
+    func compact(on site: NotchSite) -> Bool { !playing && !isExpanded(site) }
 
     /// Whether the collapsed lyric line is chosen on this kind of display:
     /// `lyric-peek` with a notch, `center-lyric` without.
     func lyricLineOn(_ site: NotchSite) -> Bool { site.hasNotch ? config.lyricPeek : config.centerLyric }
 
-    func showsLyricLine(on site: NotchSite) -> Bool { lyricLineOn(site) && roomForLyrics && !expanded && playing }
+    func showsLyricLine(on site: NotchSite) -> Bool { lyricLineOn(site) && roomForLyrics && !isExpanded(site) && playing }
 
     /// The body in screen coordinates.
     func frame(for site: NotchSite) -> NSRect {
@@ -164,11 +174,11 @@ final class Notch: ObservableObject {
     /// Whether `point` is on any display's body.
     func contains(_ point: NSPoint) -> Bool { sites.values.contains { frame(for: $0).contains(point) } }
 
-    /// Whether the pointer is over any display's body, or a little beyond
+    /// Whether the pointer is over this display's body, or a little beyond
     /// it, so drifting past its edge doesn't start the collapse.
-    private var pointerNear: Bool {
-        let p = NSEvent.mouseLocation
-        return sites.values.contains { frame(for: $0).insetBy(dx: -16, dy: -16).contains(p) }
+    private func pointerNear(_ id: CGDirectDisplayID) -> Bool {
+        guard let site = sites[id] else { return false }
+        return frame(for: site).insetBy(dx: -16, dy: -16).contains(NSEvent.mouseLocation)
     }
 
     // MARK: Playback
@@ -203,7 +213,7 @@ final class Notch: ObservableObject {
         let paused = pausedSince.map { Date().timeIntervalSince($0) >= Self.pausedTimeout } ?? false
         let show = spotify.track != nil && !paused
         if show != visible { visible = show }
-        if !show { setExpanded(false) }
+        if !show { collapseAll() }
     }
 
     private func trackStarted(_ track: Spotify.Track) {
@@ -240,7 +250,7 @@ final class Notch: ObservableObject {
         spotify.next()
     }
 
-    func expand() { setExpanded(true) }
+    func expand(_ site: NotchSite) { setExpanded(true, on: site.display) }
 
     /// A click on the body steps through expanded → collapsed without
     /// lyrics → collapsed with the lyric line → expanded. The lyric-line
@@ -249,13 +259,13 @@ final class Notch: ObservableObject {
     /// kind of display (`lyric-peek`, `center-lyric`), and is also where
     /// pointer-out and Esc return to.
     func cycle(on site: NotchSite) {
-        if expanded {
+        if isExpanded(site) {
             setLyricLine(false, on: site)
-            collapse()
+            collapse(site)
         } else if !lyricLineOn(site), roomForLyrics, playing {
             setLyricLine(true, on: site)
         } else {
-            expand()
+            expand(site)
         }
     }
 
@@ -264,36 +274,40 @@ final class Notch: ObservableObject {
         Config.shared.set("notch", site.hasNotch ? "lyric-peek" : "center-lyric", .bool(on))
     }
 
-    func collapse() { setExpanded(false) }
+    func collapse(_ site: NotchSite) { setExpanded(false, on: site.display) }
 
-    private func setExpanded(_ value: Bool) {
-        collapseWork?.cancel()
-        collapseWork = nil
-        guard expanded != value, visible || !value else { return }
-        expanded = value
+    func collapseAll() {
+        for id in expanded { setExpanded(false, on: id) }
+    }
+
+    private func setExpanded(_ value: Bool, on id: CGDirectDisplayID) {
+        collapseWork.removeValue(forKey: id)?.cancel()
+        guard expanded.contains(id) != value, visible || !value else { return }
+        if value { expanded.insert(id) } else { expanded.remove(id) }
     }
 
     // MARK: Pointer
 
-    /// The pointer moved: collapse once it has been away from every body
-    /// for the collapse delay; coming back cancels that. Only a click
-    /// expands.
+    /// The pointer moved: an expanded body collapses once the pointer has
+    /// been away from it for the collapse delay; coming back cancels that.
+    /// Only a click expands.
     func pointerMoved() {
-        if pointerNear {
-            collapseWork?.cancel()
-            collapseWork = nil
-        } else if expanded, collapseWork == nil {
-            collapseWork = after(config.collapseDelay) { $0.collapseUnlessHeld() }
+        for id in expanded {
+            if pointerNear(id) {
+                collapseWork.removeValue(forKey: id)?.cancel()
+            } else if collapseWork[id] == nil {
+                collapseWork[id] = after(config.collapseDelay) { $0.collapseUnlessHeld(id) }
+            }
         }
     }
 
     /// Not while a button is held: wait for the release.
-    private func collapseUnlessHeld() {
-        collapseWork = nil
+    private func collapseUnlessHeld(_ id: CGDirectDisplayID) {
+        collapseWork[id] = nil
         if NSEvent.pressedMouseButtons != 0 {
-            collapseWork = after(0.2) { $0.collapseUnlessHeld() }
-        } else if !pointerNear {
-            collapse()
+            collapseWork[id] = after(0.2) { $0.collapseUnlessHeld(id) }
+        } else if !pointerNear(id) {
+            setExpanded(false, on: id)
         }
     }
 
