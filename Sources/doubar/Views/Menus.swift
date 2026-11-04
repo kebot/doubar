@@ -19,7 +19,7 @@ struct EntryMenu: View {
         if key == "clock" {
             StyleMenu(widget: key)
         }
-        if key.hasPrefix("status:") {
+        if Entry.isStatus(key) {
             IconTintMenu()
         }
         PlacementMenu(key: key)
@@ -154,7 +154,7 @@ private struct PlacementMenu: View {
         let layout = config.effectiveLayout
         // A status item may be in the bar through its app's entry.
         let entry = layout.entries.contains(key)
-            ? key : key.hasPrefix("status:") ? config.entry(showing: String(key.dropFirst("status:".count))) : nil
+            ? key : Entry.itemId(key).flatMap { config.entry(showing: $0) }
         if let entry, let side = layout.side(of: entry) {
             Divider()
             if (layout.pill(containing: entry)?.count ?? 0) > 1 {

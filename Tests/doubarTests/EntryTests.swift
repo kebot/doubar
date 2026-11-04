@@ -32,3 +32,16 @@ final class EntryTests: XCTestCase {
         XCTAssertEqual(Entry.firstLine(""), "")
     }
 }
+
+final class EntryNameTests: XCTestCase {
+    func testItemIdOfStatusEntry() {
+        XCTAssertEqual(Entry.itemId("status:eu.exelban.Stats/RAM: Pie chart"), "eu.exelban.Stats/RAM: Pie chart")
+        XCTAssertEqual(Entry.itemId(Entry.status("com.apple.campo/Search")), "com.apple.campo/Search")
+    }
+
+    func testWidgetsHaveNoItemId() {
+        XCTAssertNil(Entry.itemId("clock"))
+        XCTAssertFalse(Entry.isStatus("settings"))
+        XCTAssertTrue(Entry.isStatus("status:eu.exelban.Stats"))
+    }
+}

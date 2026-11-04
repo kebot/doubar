@@ -7,14 +7,23 @@ import Foundation
 enum Entry {
     static let widgets = ["workspaces", "clock", "settings"]
 
-    static func status(_ itemId: String) -> String { "status:" + itemId }
+    private static let statusPrefix = "status:"
+
+    static func status(_ itemId: String) -> String { statusPrefix + itemId }
+
+    /// The status item (or app) a layout entry names; nil for a widget.
+    static func itemId(_ entry: String) -> String? {
+        entry.hasPrefix(statusPrefix) ? String(entry.dropFirst(statusPrefix.count)) : nil
+    }
+
+    static func isStatus(_ entry: String) -> Bool { itemId(entry) != nil }
 
     /// Whether `entry` shows the status item `itemId`.
     static func matches(_ entry: String, item itemId: String) -> Bool {
-        guard entry.hasPrefix("status:") else { return false }
+        guard let named = Self.itemId(entry) else { return false }
         // Items used to be named by their whole tooltip; entries saved then
         // still match by their first line.
-        let target = firstLine(String(entry.dropFirst("status:".count)))
+        let target = firstLine(named)
         return target == itemId || (!target.contains("/") && itemId.hasPrefix(target + "/"))
     }
 
@@ -131,8 +140,7 @@ extension Config {
                 l.remove([key])
                 return
             }
-            let itemId = String(key.dropFirst("status:".count))
-            guard key.hasPrefix("status:"), let appEntry = l.entries.first(where: { Entry.matches($0, item: itemId) }),
+            guard let itemId = Entry.itemId(key), let appEntry = l.entries.first(where: { Entry.matches($0, item: itemId) }),
                   let side = l.side(of: appEntry),
                   let p = l[side].firstIndex(where: { $0.contains(appEntry) }),
                   let e = l[side][p].firstIndex(of: appEntry)

@@ -374,7 +374,7 @@ final class Config: ObservableObject {
 
     /// Unknown names (a removed widget, say) are dropped.
     private static func pills(_ v: TomlValue?) -> [[String]] {
-        let known = { (s: String) in Entry.isWidget(s) || s.hasPrefix("status:") }
+        let known = { (s: String) in Entry.isWidget(s) || Entry.isStatus(s) }
         return (v?.array ?? []).compactMap { item in
             let group = item.string.map { [$0] } ?? item.array?.compactMap(\.string) ?? []
             let entries = group.filter(known)
