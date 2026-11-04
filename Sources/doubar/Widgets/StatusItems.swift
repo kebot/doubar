@@ -76,6 +76,15 @@ final class StatusItems: ObservableObject {
     /// shortly after (Stats' popovers, say) is moved below `anchor`, the
     /// item's place in doubar's bar, when there is one.
     func press(_ item: Item, below anchor: NSRect?) {
+        Task {
+            // A display focus change can leave an AX element that accepts
+            // AXPress but no longer opens anything. Resolve its live copy.
+            let current = await Self.scan().first { $0.id == item.id } ?? item
+            pressCurrent(current, below: anchor)
+        }
+    }
+
+    private func pressCurrent(_ item: Item, below anchor: NSRect?) {
         let element = item.element, id = item.id, pid = item.pid
         let bounds = anchor.flatMap { NSScreen.containing($0)?.frame }
         // Accessibility's coordinates are top-left, from the primary display.
@@ -534,13 +543,69 @@ struct StatusItemView<Menu: View>: View {
     @State private var frame: CGRect = .zero
 
     var body: some View {
+        content.hidden()
+            .onWindowFrameChange { frame = $0 }
+            .background(StatusItemClickTarget(
+                frame: screen.toScreen(frame), content: AnyView(content)))
+    }
+
+    private var content: some View {
         ItemImage(item: item, image: image)
             .padding(.horizontal, 4)
             .background(Capsule().fill(hovered ? Theme.hover : .clear))
             .contentShape(Rectangle())
-            .onWindowFrameChange { frame = $0 }
             .onHover { hovered = $0 }
             .onTapGesture { StatusItems.shared.press(item, below: screen.toScreen(frame)) }
             .contextMenu { menu }
+    }
+}
+
+/// The auto-hidden system menu bar can reveal over the bottom-level bar
+/// before mouse-down. Keep each mirrored item visible and clickable above it.
+private struct StatusItemClickTarget: NSViewRepresentable {
+    let frame: NSRect
+    let content: AnyView
+
+    func makeNSView(context: Context) -> TargetView { TargetView() }
+
+    func updateNSView(_ view: TargetView, context: Context) {
+        view.place(frame, content: content)
+    }
+
+    static func dismantleNSView(_ view: TargetView, coordinator: ()) {
+        view.panel.orderOut(nil)
+    }
+
+    final class TargetHostingView: NSHostingView<AnyView> {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    final class TargetView: NSView {
+        let panel: NSPanel
+        private let host = TargetHostingView(rootView: AnyView(EmptyView()))
+
+        override init(frame: NSRect) {
+            panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+            super.init(frame: frame)
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.hasShadow = false
+            panel.canHide = false
+            panel.isReleasedWhenClosed = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+            host.sizingOptions = []
+            panel.contentView = host
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        func place(_ frame: NSRect, content: AnyView) {
+            guard frame.width > 0, frame.height > 0 else { panel.orderOut(nil); return }
+            host.rootView = content
+            if panel.frame != frame { panel.setFrame(frame, display: true) }
+            if !panel.isVisible { panel.orderFrontRegardless() }
+        }
     }
 }
