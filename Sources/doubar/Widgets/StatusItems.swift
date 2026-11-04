@@ -404,20 +404,32 @@ final class StatusItems: ObservableObject {
                         let n = seen[name, default: 0]
                         seen[name] = n + 1
                         items.append(Item(
-                            id: "\(appId)/\(name)" + (n > 0 || name.isEmpty ? "#\(n)" : ""), appName: appName,
+                            id: Self.id(app: appId, name: name, index: n), appName: appName,
                             label: label, pid: pid, element: target, minX: frame.minX, width: frame.width))
                     }
                 }
                 // Separate items never overlap in a drawn menu bar. macOS
                 // instead piles overflow items into the chevron's slot, even
                 // while the auto-hidden bar omits the chevron from its AX tree.
-                let spans = items.map { ($0.minX, $0.minX + $0.width) }
-                for i in items.indices {
-                    items[i].obscured = spans.indices.contains { j in
-                        i != j && min(spans[i].1, spans[j].1) - max(spans[i].0, spans[j].0) > 2
-                    }
-                }
+                let piled = Self.overlapping(items.map { $0.minX..<($0.minX + $0.width) })
+                for i in items.indices { items[i].obscured = piled[i] }
                 cont.resume(returning: items.sorted { $0.minX < $1.minX })
+            }
+        }
+    }
+
+    /// "<app>/<name>", numbered `#<index>` when the app has several items of
+    /// that name or this one has none.
+    nonisolated static func id(app: String, name: String, index: Int) -> String {
+        "\(app)/\(name)" + (index > 0 || name.isEmpty ? "#\(index)" : "")
+    }
+
+    /// Which spans overlap another by more than 2 pt.
+    nonisolated static func overlapping(_ spans: [Range<CGFloat>]) -> [Bool] {
+        spans.indices.map { i in
+            spans.indices.contains { j in
+                i != j && min(spans[i].upperBound, spans[j].upperBound)
+                    - max(spans[i].lowerBound, spans[j].lowerBound) > 2
             }
         }
     }
