@@ -90,6 +90,23 @@ final class StatusItems: ObservableObject {
         // Accessibility's coordinates are top-left, from the primary display.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 
+        // Place a popup the moment its app announces it, rather than the next
+        // time the poll below looks: it shows at the item's hidden place until
+        // moved. The poll stays as a fallback for windows that are reused.
+        func place(_ popup: AXUIElement, _ width: CGFloat) {
+            guard let anchor, let bounds else { return }
+            let x = min(max(anchor.midX - width / 2, bounds.minX + 8), bounds.maxX - width - 8)
+            popup.setPosition(CGPoint(x: x, y: primaryHeight - (anchor.minY - 6)))
+        }
+        var watch: PopupWatch?
+        if anchor != nil, bounds != nil {
+            watch = PopupWatch(pid: pid) { window in
+                if let width = window.frame?.width, width > 0 { place(window, width) }
+            }
+            watch?.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { watch?.stop(); watch = nil }
+        }
+
         DispatchQueue.global(qos: .userInitiated).async {
             let before = Set(Self.onScreenWindows(of: pid).keys)
             // AXPress can block until the menu it opens closes.
@@ -109,8 +126,7 @@ final class StatusItems: ObservableObject {
                       let popup = AXUIElementCreateApplication(pid).windows
                         .first(where: { $0.frame.map { Self.close($0, frame) } ?? false })
                 else { continue }
-                let x = min(max(anchor.midX - frame.width / 2, bounds.minX + 8), bounds.maxX - frame.width - 8)
-                popup.setPosition(CGPoint(x: x, y: primaryHeight - (anchor.minY - 6)))
+                place(popup, frame.width)
                 return
             }
         }
@@ -450,6 +466,38 @@ final class StatusItems: ObservableObject {
         cfg.showsCursor = false
         return try? await SCScreenshotManager.captureImage(
             contentFilter: filter, configuration: cfg)
+    }
+}
+
+/// Calls `handler` on the main run loop whenever `pid` creates a window.
+private final class PopupWatch {
+    private let pid: pid_t
+    private let handler: (AXUIElement) -> Void
+    private var observer: AXObserver?
+
+    init(pid: pid_t, handler: @escaping (AXUIElement) -> Void) {
+        self.pid = pid
+        self.handler = handler
+    }
+
+    func start() {
+        let callback: AXObserverCallback = { _, element, _, refcon in
+            guard let refcon else { return }
+            Unmanaged<PopupWatch>.fromOpaque(refcon).takeUnretainedValue().handler(element)
+        }
+        var created: AXObserver?
+        guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXObserverAddNotification(created, app, kAXWindowCreatedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
+        observer = created
+    }
+
+    func stop() {
+        guard let observer else { return }
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        self.observer = nil
     }
 }
 
