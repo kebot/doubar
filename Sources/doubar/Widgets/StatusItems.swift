@@ -79,7 +79,7 @@ final class StatusItems: ObservableObject {
         Task {
             // A display focus change can leave an AX element that accepts
             // AXPress but no longer opens anything. Resolve its live copy.
-            let current = await Self.scan().first { $0.id == item.id } ?? item
+            let current = await Self.scan(only: item.pid).first { $0.id == item.id } ?? item
             pressCurrent(current, below: anchor)
         }
     }
@@ -99,8 +99,10 @@ final class StatusItems: ObservableObject {
                 if err != .success { log("pressing \(id) failed (\(err.rawValue))") }
             }
             guard let anchor, let bounds else { return }
-            for _ in 0..<20 {
-                usleep(50_000)
+            // Poll tightly: until the popup is moved it shows at the item's
+            // real (hidden) place, so every millisecond is a visible flash.
+            for _ in 0..<500 {
+                usleep(4_000)
                 // Menus come on screen too, but aren't windows Accessibility
                 // can move; they just open under the hidden item.
                 guard let frame = Self.onScreenWindows(of: pid).first(where: { !before.contains($0.key) })?.value,
@@ -322,9 +324,11 @@ final class StatusItems: ObservableObject {
 
     /// Every app's status items, including the live elements MenuBarAgent
     /// hosts while auto-hide removes them from the app's AXExtrasMenuBar.
-    private nonisolated static func scan() async -> [Item] {
+    /// `only` limits the scan to one app (and MenuBarAgent, which hosts it).
+    private nonisolated static func scan(only pid: pid_t? = nil) async -> [Item] {
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy != .prohibited && $0.processIdentifier != getpid() }
+            .filter { pid == nil || $0.processIdentifier == pid || $0.bundleIdentifier == "com.apple.MenuBarAgent" }
             .map { app in
                 let name = app.localizedName ?? "\(app.processIdentifier)"
                 return (app.processIdentifier, app.bundleIdentifier ?? name, name)
