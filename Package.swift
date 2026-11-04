@@ -9,5 +9,10 @@ let package = Package(
             name: "doubar",
             path: "Sources/doubar"
         ),
+        .testTarget(
+            name: "doubarTests",
+            dependencies: ["doubar"],
+            path: "Tests/doubarTests"
+        ),
     ]
 )

@@ -27,7 +27,8 @@ final class StatusItems: ObservableObject {
         /// Horizontal span in global coordinates. Only x is used: while the
         /// menu bar is hidden its items' vertical position is meaningless.
         let minX: CGFloat
-        let width: CGFloat
+        var width: CGFloat
+        var obscured = false
     }
 
     /// Items left to right, with their latest picture.
@@ -56,6 +57,7 @@ final class StatusItems: ObservableObject {
     private var busy = false
     private var askedForPermission = false
     private var wasCollapsed = false
+    private var primedCapture = false
 
     // The system chevron in its two states. These are its English labels;
     // it has no identifier.
@@ -74,10 +76,36 @@ final class StatusItems: ObservableObject {
     /// shortly after (Stats' popovers, say) is moved below `anchor`, the
     /// item's place in doubar's bar, when there is one.
     func press(_ item: Item, below anchor: NSRect?) {
+        Task {
+            // A display focus change can leave an AX element that accepts
+            // AXPress but no longer opens anything. Resolve its live copy.
+            let current = await Self.scan(only: item.pid).first { $0.id == item.id } ?? item
+            pressCurrent(current, below: anchor)
+        }
+    }
+
+    private func pressCurrent(_ item: Item, below anchor: NSRect?) {
         let element = item.element, id = item.id, pid = item.pid
         let bounds = anchor.flatMap { NSScreen.containing($0)?.frame }
         // Accessibility's coordinates are top-left, from the primary display.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+
+        // Place a popup the moment its app announces it, rather than the next
+        // time the poll below looks: it shows at the item's hidden place until
+        // moved. The poll stays as a fallback for windows that are reused.
+        func place(_ popup: AXUIElement, _ width: CGFloat) {
+            guard let anchor, let bounds else { return }
+            let x = min(max(anchor.midX - width / 2, bounds.minX + 8), bounds.maxX - width - 8)
+            popup.setPosition(CGPoint(x: x, y: primaryHeight - (anchor.minY - 6)))
+        }
+        var watch: PopupWatch?
+        if anchor != nil, bounds != nil {
+            watch = PopupWatch(pid: pid) { window in
+                if let width = window.frame?.width, width > 0 { place(window, width) }
+            }
+            watch?.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { watch?.stop(); watch = nil }
+        }
 
         DispatchQueue.global(qos: .userInitiated).async {
             let before = Set(Self.onScreenWindows(of: pid).keys)
@@ -88,16 +116,17 @@ final class StatusItems: ObservableObject {
                 if err != .success { log("pressing \(id) failed (\(err.rawValue))") }
             }
             guard let anchor, let bounds else { return }
-            for _ in 0..<20 {
-                usleep(50_000)
+            // Poll tightly: until the popup is moved it shows at the item's
+            // real (hidden) place, so every millisecond is a visible flash.
+            for _ in 0..<500 {
+                usleep(4_000)
                 // Menus come on screen too, but aren't windows Accessibility
                 // can move; they just open under the hidden item.
                 guard let frame = Self.onScreenWindows(of: pid).first(where: { !before.contains($0.key) })?.value,
                       let popup = AXUIElementCreateApplication(pid).windows
                         .first(where: { $0.frame.map { Self.close($0, frame) } ?? false })
                 else { continue }
-                let x = min(max(anchor.midX - frame.width / 2, bounds.minX + 8), bounds.maxX - frame.width - 8)
-                popup.setPosition(CGPoint(x: x, y: primaryHeight - (anchor.minY - 6)))
+                place(popup, frame.width)
                 return
             }
         }
@@ -171,6 +200,15 @@ final class StatusItems: ObservableObject {
         busy = true
         defer { busy = false }
 
+        // MenuBarAgent may expose live AX elements before it has drawn their
+        // pictures. Give it one visible layout pass at startup, then let the
+        // hidden bars settle before reading their frames and pixels.
+        if !primedCapture, CGPreflightScreenCaptureAccess() {
+            primedCapture = true
+            await Self.primeCapture()
+            try? await Task.sleep(for: .milliseconds(700))
+        }
+
         var found = await Self.scan()
         // macOS's own "Hide Menu Bar Items" chevron collapses every item to
         // its left, and collapsed items aren't drawn at all: Accessibility
@@ -180,6 +218,16 @@ final class StatusItems: ObservableObject {
         // items left of it go without a picture.
         let expand = found.first { $0.id == Self.systemExpand }
         let collapsedEdge = expand.map { $0.minX + $0.width } ?? -.infinity
+        let previousWidths = Dictionary(items.map { ($0.id, $0.width) }, uniquingKeysWith: { first, _ in first })
+        for index in found.indices {
+            // Overflow parks items on top of the chevron rather than drawing
+            // them. A focus change must not replace their pictures or widths
+            // with these overlapping slots, but their live elements still press.
+            if found[index].obscured || found[index].minX < collapsedEdge {
+                found[index].obscured = true
+                if let width = previousWidths[found[index].id] { found[index].width = width }
+            }
+        }
         if (expand != nil) != wasCollapsed {
             wasCollapsed = expand != nil
             if wasCollapsed { log("menu bar items collapsed by macOS; expand them with « in the system menu bar") }
@@ -190,16 +238,24 @@ final class StatusItems: ObservableObject {
 
         // Looking the window up is the costly part, and it only changes when
         // displays are reconfigured; capturing a stale one fails, which
-        // triggers a fresh lookup.
+        // triggers a fresh lookup. Since macOS 27.2 each display has a
+        // second MenuBarAgent window over the real one that stays fully
+        // transparent while the menu bar is auto-hidden; blank captures are
+        // skipped so the items are cut from the window that has them.
         tick += 1
         if menuBars.isEmpty || tick % 10 == 0 { menuBars = await Self.findMenuBars() }
         var captures: [(SCWindow, CGImage)] = []
         for bar in menuBars {
-            if let image = await Self.capture(bar) { captures.append((bar, image)) } else { menuBars = [] }
+            guard let image = await Self.capture(bar) else { menuBars = []; continue }
+            if !Self.isBlank(image) { captures.append((bar, image)) }
         }
 
         var fresh: [String: CGImage] = [:]
-        for item in found where item.minX >= collapsedEdge {
+        for item in found {
+            if item.obscured {
+                fresh[item.id] = images[item.id]
+                continue
+            }
             guard let (bar, image) = captures.first(where: {
                 $0.0.frame.minX <= item.minX && item.minX + item.width <= $0.0.frame.maxX
             }) else { continue }
@@ -208,7 +264,11 @@ final class StatusItems: ObservableObject {
                 x: (item.minX - bar.frame.minX) * scale,
                 y: (bar.frame.height - Self.sliceHeight) / 2 * scale,
                 width: item.width * scale, height: Self.sliceHeight * scale)
-            fresh[item.id] = image.cropping(to: slice.integral)
+            if let cropped = Self.crop(image, to: slice.integral), !Self.isBlank(cropped) {
+                fresh[item.id] = cropped
+            } else {
+                fresh[item.id] = images[item.id]
+            }
         }
         images = fresh
         switch Config.shared.iconTint {
@@ -259,10 +319,32 @@ final class StatusItems: ObservableObject {
         return Layers(neutral: neutralImage, coloured: anyColour ? coloured.makeImage() : nil)
     }
 
-    /// Every app's status items via its AXExtrasMenuBar, sorted left to right.
-    private nonisolated static func scan() async -> [Item] {
+    private static func primeCapture() async {
+        let key = "_HIHideMenuBar" as CFString
+        guard CFPreferencesCopyValue(key, kCFPreferencesAnyApplication,
+                                      kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Bool == true
+        else { return }
+        func setHidden(_ hidden: Bool) {
+            CFPreferencesSetValue(key, hidden as CFBoolean, kCFPreferencesAnyApplication,
+                                  kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("AppleInterfaceMenuBarHidingChangedNotification"),
+                object: nil, userInfo: nil, deliverImmediately: true)
+        }
+        setHidden(false)
+        // This scope restores auto-hide even when the task is cancelled.
+        defer { setHidden(true) }
+        try? await Task.sleep(for: .seconds(1))
+    }
+
+    /// Every app's status items, including the live elements MenuBarAgent
+    /// hosts while auto-hide removes them from the app's AXExtrasMenuBar.
+    /// `only` limits the scan to one app (and MenuBarAgent, which hosts it).
+    private nonisolated static func scan(only pid: pid_t? = nil) async -> [Item] {
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy != .prohibited && $0.processIdentifier != getpid() }
+            .filter { pid == nil || $0.processIdentifier == pid || $0.bundleIdentifier == "com.apple.MenuBarAgent" }
             .map { app in
                 let name = app.localizedName ?? "\(app.processIdentifier)"
                 return (app.processIdentifier, app.bundleIdentifier ?? name, name)
@@ -270,15 +352,37 @@ final class StatusItems: ObservableObject {
         return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
                 var items: [Item] = []
+                var hosted: [pid_t: [AXUIElement]] = [:]
+                if let agent = apps.first(where: { $0.1 == "com.apple.MenuBarAgent" }) {
+                    let root = AXUIElementCreateApplication(agent.0)
+                    AXUIElementSetMessagingTimeout(root, 0.2)
+                    for window in root.windows {
+                        for group in window.children {
+                            for child in group.children {
+                                var owner: pid_t = 0
+                                guard AXUIElementGetPid(child, &owner) == .success,
+                                      owner != agent.0, let frame = child.frame,
+                                      frame.width > 0, frame.height > 0, frame.height < 60
+                                else { continue }
+                                let existing = hosted[owner, default: []]
+                                if !existing.contains(where: { CFEqual($0, child) }) {
+                                    hosted[owner, default: []].append(child)
+                                }
+                            }
+                        }
+                    }
+                }
                 for (pid, appId, appName) in apps {
                     let app = AXUIElementCreateApplication(pid)
                     // A hung app shouldn't stall the whole scan.
                     AXUIElementSetMessagingTimeout(app, 0.2)
-                    guard let bar: AXUIElement = app.attribute("AXExtrasMenuBar"),
-                          let children: [AXUIElement] = bar.attribute(kAXChildrenAttribute)
-                    else { continue }
-                    // Items that share a name (or have none) are numbered
-                    // in AX order within their app.
+                    let bar: AXUIElement? = app.attribute("AXExtrasMenuBar")
+                    let own = bar?.children ?? []
+                    let children = own.isEmpty
+                        ? (hosted[pid] ?? []).sorted { ($0.frame?.minX ?? 0) < ($1.frame?.minX ?? 0) }
+                        : own
+                    // Hosted children arrive in an unstable order; unnamed
+                    // items are numbered left to right when the own bar is absent.
                     var seen: [String: Int] = [:]
                     for child in children {
                         guard let frame = child.frame, frame.width > 0 else { continue }
@@ -291,16 +395,41 @@ final class StatusItems: ObservableObject {
                         let label = child.text(kAXDescriptionAttribute) ?? child.text(kAXTitleAttribute)
                             ?? inner.lazy.compactMap { $0.text(kAXDescriptionAttribute) }.first
                             ?? child.text(kAXHelpAttribute)
-                        let name = child.text(kAXIdentifierAttribute)
-                            ?? inner.lazy.compactMap { $0.text(kAXIdentifierAttribute) }.first ?? label ?? ""
+                        // Some apps (magpie) put live figures on the lines
+                        // below the name in their tooltip, so only the first
+                        // line is stable enough to name the item.
+                        let name = Entry.firstLine(
+                            child.text(kAXIdentifierAttribute)
+                                ?? inner.lazy.compactMap { $0.text(kAXIdentifierAttribute) }.first ?? label ?? "")
                         let n = seen[name, default: 0]
                         seen[name] = n + 1
                         items.append(Item(
-                            id: "\(appId)/\(name)" + (n > 0 || name.isEmpty ? "#\(n)" : ""), appName: appName,
+                            id: Self.id(app: appId, name: name, index: n), appName: appName,
                             label: label, pid: pid, element: target, minX: frame.minX, width: frame.width))
                     }
                 }
+                // Separate items never overlap in a drawn menu bar. macOS
+                // instead piles overflow items into the chevron's slot, even
+                // while the auto-hidden bar omits the chevron from its AX tree.
+                let piled = Self.overlapping(items.map { $0.minX..<($0.minX + $0.width) })
+                for i in items.indices { items[i].obscured = piled[i] }
                 cont.resume(returning: items.sorted { $0.minX < $1.minX })
+            }
+        }
+    }
+
+    /// "<app>/<name>", numbered `#<index>` when the app has several items of
+    /// that name or this one has none.
+    nonisolated static func id(app: String, name: String, index: Int) -> String {
+        "\(app)/\(name)" + (index > 0 || name.isEmpty ? "#\(index)" : "")
+    }
+
+    /// Which spans overlap another by more than 2 pt.
+    nonisolated static func overlapping(_ spans: [Range<CGFloat>]) -> [Bool] {
+        spans.indices.map { i in
+            spans.indices.contains { j in
+                i != j && min(spans[i].upperBound, spans[j].upperBound)
+                    - max(spans[i].lowerBound, spans[j].lowerBound) > 2
             }
         }
     }
@@ -314,14 +443,73 @@ final class StatusItems: ObservableObject {
         }
     }
 
+    /// Give each cropped icon its own pixel buffer before handing it to SwiftUI.
+    private static func crop(_ image: CGImage, to rect: CGRect) -> CGImage? {
+        guard let slice = image.cropping(to: rect),
+              let context = CGContext(data: nil, width: slice.width, height: slice.height,
+                                      bitsPerComponent: 8, bytesPerRow: slice.width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.draw(slice, in: CGRect(x: 0, y: 0, width: slice.width, height: slice.height))
+        return context.makeImage()
+    }
+
+    /// Whether a capture has no visible pixel at all.
+    private static func isBlank(_ image: CGImage) -> Bool {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data?.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        else { return true }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        for i in 0..<(w * h) where data[i * 4 + 3] > 12 { return false }
+        return true
+    }
+
     private static func capture(_ window: SCWindow) async -> CGImage? {
-        let scale = NSScreen.screens.first { $0.frame.minX == window.frame.minX }?.backingScaleFactor ?? 2
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let scale = CGFloat(filter.pointPixelScale)
         let cfg = SCStreamConfiguration()
         cfg.width = Int(window.frame.width * scale)
         cfg.height = Int(window.frame.height * scale)
         cfg.showsCursor = false
         return try? await SCScreenshotManager.captureImage(
-            contentFilter: SCContentFilter(desktopIndependentWindow: window), configuration: cfg)
+            contentFilter: filter, configuration: cfg)
+    }
+}
+
+/// Calls `handler` on the main run loop whenever `pid` creates a window.
+private final class PopupWatch {
+    private let pid: pid_t
+    private let handler: (AXUIElement) -> Void
+    private var observer: AXObserver?
+
+    init(pid: pid_t, handler: @escaping (AXUIElement) -> Void) {
+        self.pid = pid
+        self.handler = handler
+    }
+
+    func start() {
+        let callback: AXObserverCallback = { _, element, _, refcon in
+            guard let refcon else { return }
+            Unmanaged<PopupWatch>.fromOpaque(refcon).takeUnretainedValue().handler(element)
+        }
+        var created: AXObserver?
+        guard AXObserverCreate(pid, callback, &created) == .success, let created else { return }
+        let app = AXUIElementCreateApplication(pid)
+        AXObserverAddNotification(created, app, kAXWindowCreatedNotification as CFString,
+                                  Unmanaged.passUnretained(self).toOpaque())
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
+        observer = created
+    }
+
+    func stop() {
+        guard let observer else { return }
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        self.observer = nil
     }
 }
 
@@ -423,13 +611,69 @@ struct StatusItemView<Menu: View>: View {
     @State private var frame: CGRect = .zero
 
     var body: some View {
+        content.hidden()
+            .onWindowFrameChange { frame = $0 }
+            .background(StatusItemClickTarget(
+                frame: screen.toScreen(frame), content: AnyView(content)))
+    }
+
+    private var content: some View {
         ItemImage(item: item, image: image)
             .padding(.horizontal, 4)
             .background(Capsule().fill(hovered ? Theme.hover : .clear))
             .contentShape(Rectangle())
-            .onWindowFrameChange { frame = $0 }
             .onHover { hovered = $0 }
             .onTapGesture { StatusItems.shared.press(item, below: screen.toScreen(frame)) }
             .contextMenu { menu }
+    }
+}
+
+/// The auto-hidden system menu bar can reveal over the bottom-level bar
+/// before mouse-down. Keep each mirrored item visible and clickable above it.
+private struct StatusItemClickTarget: NSViewRepresentable {
+    let frame: NSRect
+    let content: AnyView
+
+    func makeNSView(context: Context) -> TargetView { TargetView() }
+
+    func updateNSView(_ view: TargetView, context: Context) {
+        view.place(frame, content: content)
+    }
+
+    static func dismantleNSView(_ view: TargetView, coordinator: ()) {
+        view.panel.orderOut(nil)
+    }
+
+    final class TargetHostingView: NSHostingView<AnyView> {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    final class TargetView: NSView {
+        let panel: NSPanel
+        private let host = TargetHostingView(rootView: AnyView(EmptyView()))
+
+        override init(frame: NSRect) {
+            panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+            super.init(frame: frame)
+            panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
+            panel.hasShadow = false
+            panel.canHide = false
+            panel.isReleasedWhenClosed = false
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
+            host.sizingOptions = []
+            panel.contentView = host
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        func place(_ frame: NSRect, content: AnyView) {
+            guard frame.width > 0, frame.height > 0 else { panel.orderOut(nil); return }
+            host.rootView = content
+            if panel.frame != frame { panel.setFrame(frame, display: true) }
+            if !panel.isVisible { panel.orderFrontRegardless() }
+        }
     }
 }

@@ -283,8 +283,8 @@ private struct SettingsView: View {
     }
 
     private func chipView(_ entry: String) -> some View {
-        let items = entry.hasPrefix("status:") ? statusItems.items(for: entry) : []
-        let absent = entry.hasPrefix("status:") && items.isEmpty
+        let items = Entry.isStatus(entry) ? statusItems.items(for: entry) : []
+        let absent = Entry.isStatus(entry) && items.isEmpty
         return HStack(spacing: 4) {
             switch entry {
             case "clock": widgetChip("clock", ClockFormat.string(.now, config.clock.format))
@@ -334,14 +334,14 @@ private struct SettingsView: View {
 
     /// "Telegram/#0" for "status:com.tdesktop.Telegram/#0".
     private static func shortName(_ entry: String) -> String {
-        let id = entry.dropFirst("status:".count)
+        let id = Substring(Entry.itemId(entry) ?? entry)
         guard let slash = id.firstIndex(of: "/") else { return String(id.split(separator: ".").last ?? id) }
         let app = id[..<slash].split(separator: ".").last ?? ""
         return "\(app)\(id[slash...])"
     }
 
     private static func describe(_ entry: String, _ absent: Bool) -> String {
-        let text = entry.hasPrefix("status:") ? String(entry.dropFirst("status:".count)) : "\(entry) (built in)"
+        let text = Entry.itemId(entry) ?? "\(entry) (built in)"
         return absent ? "\(text) · not running" : text
     }
 
