@@ -27,7 +27,8 @@ final class StatusItems: ObservableObject {
         /// Horizontal span in global coordinates. Only x is used: while the
         /// menu bar is hidden its items' vertical position is meaningless.
         let minX: CGFloat
-        let width: CGFloat
+        var width: CGFloat
+        var obscured = false
     }
 
     /// Items left to right, with their latest picture.
@@ -56,6 +57,7 @@ final class StatusItems: ObservableObject {
     private var busy = false
     private var askedForPermission = false
     private var wasCollapsed = false
+    private var primedCapture = false
 
     // The system chevron in its two states. These are its English labels;
     // it has no identifier.
@@ -171,6 +173,15 @@ final class StatusItems: ObservableObject {
         busy = true
         defer { busy = false }
 
+        // MenuBarAgent may expose live AX elements before it has drawn their
+        // pictures. Give it one visible layout pass at startup, then let the
+        // hidden bars settle before reading their frames and pixels.
+        if !primedCapture, CGPreflightScreenCaptureAccess() {
+            primedCapture = true
+            await Self.primeCapture()
+            try? await Task.sleep(for: .milliseconds(700))
+        }
+
         var found = await Self.scan()
         // macOS's own "Hide Menu Bar Items" chevron collapses every item to
         // its left, and collapsed items aren't drawn at all: Accessibility
@@ -180,6 +191,16 @@ final class StatusItems: ObservableObject {
         // items left of it go without a picture.
         let expand = found.first { $0.id == Self.systemExpand }
         let collapsedEdge = expand.map { $0.minX + $0.width } ?? -.infinity
+        let previousWidths = Dictionary(items.map { ($0.id, $0.width) }, uniquingKeysWith: { first, _ in first })
+        for index in found.indices {
+            // Overflow parks items on top of the chevron rather than drawing
+            // them. A focus change must not replace their pictures or widths
+            // with these overlapping slots, but their live elements still press.
+            if found[index].obscured || found[index].minX < collapsedEdge {
+                found[index].obscured = true
+                if let width = previousWidths[found[index].id] { found[index].width = width }
+            }
+        }
         if (expand != nil) != wasCollapsed {
             wasCollapsed = expand != nil
             if wasCollapsed { log("menu bar items collapsed by macOS; expand them with « in the system menu bar") }
@@ -190,16 +211,24 @@ final class StatusItems: ObservableObject {
 
         // Looking the window up is the costly part, and it only changes when
         // displays are reconfigured; capturing a stale one fails, which
-        // triggers a fresh lookup.
+        // triggers a fresh lookup. Since macOS 27.2 each display has a
+        // second MenuBarAgent window over the real one that stays fully
+        // transparent while the menu bar is auto-hidden; blank captures are
+        // skipped so the items are cut from the window that has them.
         tick += 1
         if menuBars.isEmpty || tick % 10 == 0 { menuBars = await Self.findMenuBars() }
         var captures: [(SCWindow, CGImage)] = []
         for bar in menuBars {
-            if let image = await Self.capture(bar) { captures.append((bar, image)) } else { menuBars = [] }
+            guard let image = await Self.capture(bar) else { menuBars = []; continue }
+            if !Self.isBlank(image) { captures.append((bar, image)) }
         }
 
         var fresh: [String: CGImage] = [:]
-        for item in found where item.minX >= collapsedEdge {
+        for item in found {
+            if item.obscured {
+                fresh[item.id] = images[item.id]
+                continue
+            }
             guard let (bar, image) = captures.first(where: {
                 $0.0.frame.minX <= item.minX && item.minX + item.width <= $0.0.frame.maxX
             }) else { continue }
@@ -208,7 +237,11 @@ final class StatusItems: ObservableObject {
                 x: (item.minX - bar.frame.minX) * scale,
                 y: (bar.frame.height - Self.sliceHeight) / 2 * scale,
                 width: item.width * scale, height: Self.sliceHeight * scale)
-            fresh[item.id] = image.cropping(to: slice.integral)
+            if let cropped = Self.crop(image, to: slice.integral), !Self.isBlank(cropped) {
+                fresh[item.id] = cropped
+            } else {
+                fresh[item.id] = images[item.id]
+            }
         }
         images = fresh
         switch Config.shared.iconTint {
@@ -259,7 +292,27 @@ final class StatusItems: ObservableObject {
         return Layers(neutral: neutralImage, coloured: anyColour ? coloured.makeImage() : nil)
     }
 
-    /// Every app's status items via its AXExtrasMenuBar, sorted left to right.
+    private static func primeCapture() async {
+        let key = "_HIHideMenuBar" as CFString
+        guard CFPreferencesCopyValue(key, kCFPreferencesAnyApplication,
+                                      kCFPreferencesCurrentUser, kCFPreferencesAnyHost) as? Bool == true
+        else { return }
+        func setHidden(_ hidden: Bool) {
+            CFPreferencesSetValue(key, hidden as CFBoolean, kCFPreferencesAnyApplication,
+                                  kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            CFPreferencesSynchronize(kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost)
+            DistributedNotificationCenter.default().postNotificationName(
+                Notification.Name("AppleInterfaceMenuBarHidingChangedNotification"),
+                object: nil, userInfo: nil, deliverImmediately: true)
+        }
+        setHidden(false)
+        // This scope restores auto-hide even when the task is cancelled.
+        defer { setHidden(true) }
+        try? await Task.sleep(for: .seconds(1))
+    }
+
+    /// Every app's status items, including the live elements MenuBarAgent
+    /// hosts while auto-hide removes them from the app's AXExtrasMenuBar.
     private nonisolated static func scan() async -> [Item] {
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy != .prohibited && $0.processIdentifier != getpid() }
@@ -270,15 +323,37 @@ final class StatusItems: ObservableObject {
         return await withCheckedContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
                 var items: [Item] = []
+                var hosted: [pid_t: [AXUIElement]] = [:]
+                if let agent = apps.first(where: { $0.1 == "com.apple.MenuBarAgent" }) {
+                    let root = AXUIElementCreateApplication(agent.0)
+                    AXUIElementSetMessagingTimeout(root, 0.2)
+                    for window in root.windows {
+                        for group in window.children {
+                            for child in group.children {
+                                var owner: pid_t = 0
+                                guard AXUIElementGetPid(child, &owner) == .success,
+                                      owner != agent.0, let frame = child.frame,
+                                      frame.width > 0, frame.height > 0, frame.height < 60
+                                else { continue }
+                                let existing = hosted[owner, default: []]
+                                if !existing.contains(where: { CFEqual($0, child) }) {
+                                    hosted[owner, default: []].append(child)
+                                }
+                            }
+                        }
+                    }
+                }
                 for (pid, appId, appName) in apps {
                     let app = AXUIElementCreateApplication(pid)
                     // A hung app shouldn't stall the whole scan.
                     AXUIElementSetMessagingTimeout(app, 0.2)
-                    guard let bar: AXUIElement = app.attribute("AXExtrasMenuBar"),
-                          let children: [AXUIElement] = bar.attribute(kAXChildrenAttribute)
-                    else { continue }
-                    // Items that share a name (or have none) are numbered
-                    // in AX order within their app.
+                    let bar: AXUIElement? = app.attribute("AXExtrasMenuBar")
+                    let own = bar?.children ?? []
+                    let children = own.isEmpty
+                        ? (hosted[pid] ?? []).sorted { ($0.frame?.minX ?? 0) < ($1.frame?.minX ?? 0) }
+                        : own
+                    // Hosted children arrive in an unstable order; unnamed
+                    // items are numbered left to right when the own bar is absent.
                     var seen: [String: Int] = [:]
                     for child in children {
                         guard let frame = child.frame, frame.width > 0 else { continue }
@@ -300,6 +375,15 @@ final class StatusItems: ObservableObject {
                             label: label, pid: pid, element: target, minX: frame.minX, width: frame.width))
                     }
                 }
+                // Separate items never overlap in a drawn menu bar. macOS
+                // instead piles overflow items into the chevron's slot, even
+                // while the auto-hidden bar omits the chevron from its AX tree.
+                let spans = items.map { ($0.minX, $0.minX + $0.width) }
+                for i in items.indices {
+                    items[i].obscured = spans.indices.contains { j in
+                        i != j && min(spans[i].1, spans[j].1) - max(spans[i].0, spans[j].0) > 2
+                    }
+                }
                 cont.resume(returning: items.sorted { $0.minX < $1.minX })
             }
         }
@@ -314,14 +398,41 @@ final class StatusItems: ObservableObject {
         }
     }
 
+    /// Give each cropped icon its own pixel buffer before handing it to SwiftUI.
+    private static func crop(_ image: CGImage, to rect: CGRect) -> CGImage? {
+        guard let slice = image.cropping(to: rect),
+              let context = CGContext(data: nil, width: slice.width, height: slice.height,
+                                      bitsPerComponent: 8, bytesPerRow: slice.width * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.draw(slice, in: CGRect(x: 0, y: 0, width: slice.width, height: slice.height))
+        return context.makeImage()
+    }
+
+    /// Whether a capture has no visible pixel at all.
+    private static func isBlank(_ image: CGImage) -> Bool {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0,
+              let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data?.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        else { return true }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        for i in 0..<(w * h) where data[i * 4 + 3] > 12 { return false }
+        return true
+    }
+
     private static func capture(_ window: SCWindow) async -> CGImage? {
-        let scale = NSScreen.screens.first { $0.frame.minX == window.frame.minX }?.backingScaleFactor ?? 2
+        let filter = SCContentFilter(desktopIndependentWindow: window)
+        let scale = CGFloat(filter.pointPixelScale)
         let cfg = SCStreamConfiguration()
         cfg.width = Int(window.frame.width * scale)
         cfg.height = Int(window.frame.height * scale)
         cfg.showsCursor = false
         return try? await SCScreenshotManager.captureImage(
-            contentFilter: SCContentFilter(desktopIndependentWindow: window), configuration: cfg)
+            contentFilter: filter, configuration: cfg)
     }
 }
 
