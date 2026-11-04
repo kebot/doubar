@@ -12,8 +12,17 @@ enum Entry {
     /// Whether `entry` shows the status item `itemId`.
     static func matches(_ entry: String, item itemId: String) -> Bool {
         guard entry.hasPrefix("status:") else { return false }
-        let target = entry.dropFirst("status:".count)
+        // Items used to be named by their whole tooltip; entries saved then
+        // still match by their first line.
+        let target = firstLine(String(entry.dropFirst("status:".count)))
         return target == itemId || (!target.contains("/") && itemId.hasPrefix(target + "/"))
+    }
+
+    /// An item's name up to the first line break: the part of a multi-line
+    /// tooltip that doesn't change.
+    static func firstLine(_ name: String) -> String {
+        name.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            .first.map(String.init) ?? name
     }
 
     static func isWidget(_ entry: String) -> Bool { widgets.contains(entry) }

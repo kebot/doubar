@@ -375,8 +375,12 @@ final class StatusItems: ObservableObject {
                         let label = child.text(kAXDescriptionAttribute) ?? child.text(kAXTitleAttribute)
                             ?? inner.lazy.compactMap { $0.text(kAXDescriptionAttribute) }.first
                             ?? child.text(kAXHelpAttribute)
-                        let name = child.text(kAXIdentifierAttribute)
-                            ?? inner.lazy.compactMap { $0.text(kAXIdentifierAttribute) }.first ?? label ?? ""
+                        // Some apps (magpie) put live figures on the lines
+                        // below the name in their tooltip, so only the first
+                        // line is stable enough to name the item.
+                        let name = Entry.firstLine(
+                            child.text(kAXIdentifierAttribute)
+                                ?? inner.lazy.compactMap { $0.text(kAXIdentifierAttribute) }.first ?? label ?? "")
                         let n = seen[name, default: 0]
                         seen[name] = n + 1
                         items.append(Item(
