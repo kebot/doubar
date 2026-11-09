@@ -18,6 +18,32 @@ enum Entry {
 
     static func isStatus(_ entry: String) -> Bool { itemId(entry) != nil }
 
+    private static let commandPrefix = "widget:"
+
+    /// The layout entry for the command widget `id` ([widget.<id>]).
+    static func command(_ id: String) -> String { commandPrefix + id }
+
+    /// The command widget a layout entry names; nil for anything else.
+    static func commandId(_ entry: String) -> String? {
+        entry.hasPrefix(commandPrefix) ? String(entry.dropFirst(commandPrefix.count)) : nil
+    }
+
+    static func isCommand(_ entry: String) -> Bool { commandId(entry) != nil }
+
+    /// A widget id as the settings UI writes it: lower-case letters,
+    /// digits, "-" and "_"; nil when nothing is left.
+    static func sanitizedId(_ name: String) -> String? {
+        var out = ""
+        for c in name.lowercased().unicodeScalars {
+            if ("a"..."z").contains(c) || ("0"..."9").contains(c) || c == "-" || c == "_" {
+                out.unicodeScalars.append(c)
+            } else if c == " " {
+                out += "-"
+            }
+        }
+        return out.isEmpty ? nil : out
+    }
+
     /// Whether `entry` shows the status item `itemId`.
     static func matches(_ entry: String, item itemId: String) -> Bool {
         guard let named = Self.itemId(entry) else { return false }

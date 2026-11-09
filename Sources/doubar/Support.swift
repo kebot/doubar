@@ -25,6 +25,54 @@ func run(_ path: String, _ args: [String]) async -> String? {
     }
 }
 
+struct ShellResult {
+    var stdout: String
+    var stderr: String
+    /// Nil when the command couldn't start or was killed for taking too long.
+    var status: Int32?
+}
+
+/// Run `command` with `/bin/zsh -c`, off the main thread. A GUI app's PATH
+/// lacks Homebrew's, so it's added. Killed after `timeout` seconds.
+func runShell(_ command: String, timeout: TimeInterval = 20) async -> ShellResult {
+    await withCheckedContinuation { cont in
+        DispatchQueue.global(qos: .utility).async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            p.arguments = ["-c", command]
+            var env = ProcessInfo.processInfo.environment
+            env["PATH"] = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+            p.environment = env
+            let out = Pipe(), err = Pipe()
+            p.standardOutput = out
+            p.standardError = err
+            p.standardInput = FileHandle.nullDevice
+            do { try p.run() } catch {
+                cont.resume(returning: ShellResult(stdout: "", stderr: "\(error.localizedDescription)", status: nil))
+                return
+            }
+            var timedOut = false
+            let kill = DispatchWorkItem { timedOut = true; p.terminate() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: kill)
+            // stderr is drained on its own thread so a chatty command can't fill the pipe.
+            var errData = Data()
+            let errDone = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                errData = err.fileHandleForReading.readDataToEndOfFile()
+                errDone.signal()
+            }
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            p.waitUntilExit()
+            kill.cancel()
+            errDone.wait()
+            cont.resume(returning: ShellResult(
+                stdout: String(decoding: data, as: UTF8.self),
+                stderr: timedOut ? "timed out after \(Int(timeout)) s" : String(decoding: errData, as: UTF8.self),
+                status: timedOut ? nil : p.terminationStatus))
+        }
+    }
+}
+
 enum SingleInstance {
     private static var fd: Int32 = -1
 

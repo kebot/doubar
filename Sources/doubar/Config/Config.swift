@@ -36,6 +36,24 @@ final class Config: ObservableObject {
         var style = Style()
     }
 
+    /// [widget.<id>]: a pill showing a shell command's output.
+    struct Command: Equatable, Identifiable {
+        var id: String
+        /// Run with `/bin/zsh -c`; the first line of stdout is shown.
+        var command: String
+        /// Seconds between runs.
+        var interval: Double = 30
+        /// An SF Symbol shown before the text.
+        var icon: String?
+        /// Run on a click; without one a click just refreshes.
+        var click: String?
+        /// Text longer than this is cut with an ellipsis.
+        var maxLength = 40
+        var style = Style()
+
+        static let intervals: ClosedRange<Double> = 1...86400
+    }
+
     /// [notch]: the music overlay grown out of the MacBook notch.
     struct Notch: Equatable {
         var enabled = true
@@ -162,6 +180,8 @@ final class Config: ObservableObject {
     /// `effectiveLayout`).
     @Published private(set) var layout: Layout?
     @Published private(set) var clock = Clock()
+    /// The [widget.<id>] tables, by id.
+    @Published private(set) var commands: [String: Command] = [:]
     @Published private(set) var workspacesStyle = Style()
     @Published private(set) var notch = Notch()
     @Published private(set) var iconTint = IconTint.original
@@ -343,6 +363,7 @@ final class Config: ObservableObject {
 
         let c = doc["clock"]
         set(\.clock, Clock(format: c?["format"]?.string, style: Self.style(c)))
+        set(\.commands, Self.commands(doc["widget"]))
 
         let n = doc["notch"]
         var notch = Notch()
@@ -374,7 +395,7 @@ final class Config: ObservableObject {
 
     /// Unknown names (a removed widget, say) are dropped.
     private static func pills(_ v: TomlValue?) -> [[String]] {
-        let known = { (s: String) in Entry.isWidget(s) || Entry.isStatus(s) }
+        let known = { (s: String) in Entry.isWidget(s) || Entry.isStatus(s) || Entry.isCommand(s) }
         return (v?.array ?? []).compactMap { item in
             let group = item.string.map { [$0] } ?? item.array?.compactMap(\.string) ?? []
             let entries = group.filter(known)
@@ -382,7 +403,26 @@ final class Config: ObservableObject {
         }
     }
 
-    private static func style(_ table: TomlValue?) -> Style {
+    /// Every [widget.<id>] with a command; the others are skipped (and
+    /// reported by `doubar check-config`).
+    nonisolated static func commands(_ widgets: TomlValue?) -> [String: Command] {
+        var out: [String: Command] = [:]
+        for (id, t) in widgets?.table ?? [:] {
+            guard let command = t["command"]?.string, !command.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+            var c = Command(id: id, command: command)
+            if let seconds = t["interval"]?.number {
+                c.interval = min(max(seconds, Command.intervals.lowerBound), Command.intervals.upperBound)
+            }
+            c.icon = t["icon"]?.string
+            c.click = t["click"]?.string
+            if let n = t["max-length"]?.number { c.maxLength = max(1, Int(n)) }
+            c.style = style(t)
+            out[id] = c
+        }
+        return out
+    }
+
+    nonisolated private static func style(_ table: TomlValue?) -> Style {
         Style(pill: table?["style"]?["pill"]?.string, text: table?["style"]?["text"]?.string)
     }
 
@@ -458,7 +498,7 @@ final class Config: ObservableObject {
         switch widget {
         case "clock": clock.style
         case "workspaces": workspacesStyle
-        default: Style()
+        default: Entry.commandId(widget).flatMap { commands[$0]?.style } ?? Style()
         }
     }
 
@@ -495,7 +535,40 @@ final class Config: ObservableObject {
         var t: [String: TomlValue] = [:]
         if let pill = style?.pill { t["pill"] = .string(pill) }
         if let text = style?.text { t["text"] = .string(text) }
-        set(widget, "style", t.isEmpty ? nil : .table(t))
+        let value: TomlValue? = t.isEmpty ? nil : .table(t)
+        if let id = Entry.commandId(widget) {
+            setCommand(id, "style", value)
+        } else {
+            set(widget, "style", value)
+        }
+    }
+
+    /// Set one key of [widget.<id>]; nil removes it.
+    func setCommand(_ id: String, _ key: String, _ value: TomlValue?) {
+        edit(debounce: false) { $0.setting(value, at: ["widget", id], key) }
+    }
+
+    /// Create [widget.<id>] and put it on the right of the bar. Returns
+    /// false when the id is taken.
+    @discardableResult
+    func addCommand(_ id: String, command: String, interval: Int = 30) -> Bool {
+        guard commands[id] == nil else { return false }
+        edit(debounce: false) {
+            $0.replacingTable(
+                ["widget", id], with: "command = \(TomlValue.quote(command))\ninterval = \(interval)\n")
+        }
+        updateLayout { l in
+            if !l.entries.contains(Entry.command(id)) { l.right.append([Entry.command(id)]) }
+        }
+        return true
+    }
+
+    /// Delete [widget.<id>] and take it out of the bar.
+    func removeCommand(_ id: String) {
+        edit(debounce: false) { $0.removingTable(["widget", id]) }
+        if layout != nil || effectiveLayout.entries.contains(Entry.command(id)) {
+            updateLayout { $0.remove([Entry.command(id)]) }
+        }
     }
 
     /// Rewrite the [layout] table.
@@ -586,6 +659,27 @@ final class Config: ObservableObject {
                 for w in ["clock", "workspaces"] {
                     for k in ["pill", "text"] {
                         if let s = doc[w]?["style"]?[k]?.string { exprs.append(("\(w).style.\(k)", s)) }
+                    }
+                }
+                let widgets = doc["widget"]?.table ?? [:]
+                for (id, t) in widgets.sorted(by: { $0.key < $1.key }) {
+                    if t["command"]?.string?.trimmingCharacters(in: .whitespaces).isEmpty ?? true {
+                        print("  [widget.\(id)]: needs a command = \"...\"")
+                        failed = true
+                    }
+                    if let i = t["interval"], i.number == nil {
+                        print("  [widget.\(id)] interval: expected a number of seconds")
+                        failed = true
+                    }
+                    for k in ["pill", "text"] {
+                        if let s = t["style"]?[k]?.string { exprs.append(("widget.\(id).style.\(k)", s)) }
+                    }
+                }
+                let layoutEntries = (doc["layout"]?["left"]?.array ?? []) + (doc["layout"]?["right"]?.array ?? [])
+                for entry in layoutEntries.flatMap({ $0.array ?? [$0] }).compactMap(\.string) {
+                    if let id = Entry.commandId(entry), widgets[id] == nil {
+                        print("  [layout] \(entry): no [widget.\(id)] table")
+                        failed = true
                     }
                 }
                 for (name, expr) in exprs where RGBA.resolve(expr, palette: all) == nil {

@@ -24,12 +24,16 @@ final class BarSettings {
         if isOpen { close() } else { open(below: anchor) }
     }
 
+    /// Where the popup is on screen, for prompts that open below it.
+    var frame: NSRect? { isOpen ? panel?.frame : nil }
+
     /// Open below `anchor`, or below the right end of the main display's bar.
-    func open(below anchor: NSRect? = nil) {
+    func open(below anchor: NSRect? = nil, tab: SettingsTab = .layout) {
         let anchor = anchor ?? Self.defaultAnchor
         let panel = self.panel ?? PopupPanel()
         self.panel = panel
-        panel.setContent(SettingsView { [weak panel] size in panel?.fit(size) }, below: anchor, gap: 8, inset: 12)
+        panel.setContent(
+            SettingsView(tab: tab) { [weak panel] size in panel?.fit(size) }, below: anchor, gap: 8, inset: 12)
         panel.orderFrontRegardless()
         // A global monitor only sees clicks that go to other apps, which is
         // what "clicked away" means here; mouse events need no permission.
@@ -52,7 +56,8 @@ final class BarSettings {
     }
 }
 
-private enum Tab { case layout, bar }
+enum SettingsTab { case layout, widgets, bar }
+private typealias Tab = SettingsTab
 
 /// A row of pills in the Layout tab.
 private enum Row: Hashable {
@@ -94,13 +99,19 @@ private struct SettingsView: View {
 
     @ObservedObject private var config = Config.shared
     @ObservedObject private var statusItems = StatusItems.shared
-    @State private var tab = Tab.layout
+    @ObservedObject private var commands = CommandWidgets.shared
+    @State private var tab: Tab
     @State private var drag: Drag?
     @State private var pillFrames: [PillRef: CGRect] = [:]
     @State private var rowFrames: [Row: CGRect] = [:]
     @State private var hovered: String?
 
     private static let space = "settings"
+
+    init(tab: Tab = .layout, onSize: @escaping (CGSize) -> Void) {
+        _tab = State(initialValue: tab)
+        self.onSize = onSize
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -119,6 +130,7 @@ private struct SettingsView: View {
             }
             switch tab {
             case .layout: layoutTab
+            case .widgets: WidgetsTab()
             case .bar: BarTab()
             }
         }
@@ -148,6 +160,7 @@ private struct SettingsView: View {
     private var tabs: some View {
         HStack(spacing: 2) {
             tabButton("Layout", .layout)
+            tabButton("Widgets", .widgets)
             tabButton("Bar", .bar)
         }
         .padding(2)
@@ -196,7 +209,8 @@ private struct SettingsView: View {
         let items = statusItems.items
             .filter { item in !placed.contains { Entry.matches($0, item: item.id) } }
             .map { Entry.status($0.id) }
-        return widgets + items
+        let commands = config.commands.keys.sorted().map(Entry.command).filter { !placed.contains($0) }
+        return widgets + commands + items
     }
 
     private func section(_ title: String, note: String? = nil, @ViewBuilder content: () -> some View) -> some View {
@@ -284,14 +298,21 @@ private struct SettingsView: View {
 
     private func chipView(_ entry: String) -> some View {
         let items = Entry.isStatus(entry) ? statusItems.items(for: entry) : []
-        let absent = Entry.isStatus(entry) && items.isEmpty
+        let missing = Entry.commandId(entry).map { config.commands[$0] == nil } ?? false
+        let absent = (Entry.isStatus(entry) && items.isEmpty) || missing
         return HStack(spacing: 4) {
             switch entry {
             case "clock": widgetChip("clock", ClockFormat.string(.now, config.clock.format))
             case "settings": widgetChip("slider.horizontal.3", "Settings")
             case "workspaces": widgetChip("square.grid.2x2", "Workspaces")
+            case _ where Entry.isCommand(entry):
+                let id = Entry.commandId(entry)!
+                let output = commands.outputs[id]?.text ?? ""
+                widgetChip(config.commands[id]?.icon ?? "terminal", output.isEmpty ? id : CommandWidgets.clip(output, 18))
             default:
-                if absent {
+                if missing {
+                    Text(Self.clip(Entry.commandId(entry) ?? entry))
+                } else if absent {
                     Text(Self.clip(Self.shortName(entry)))
                 } else {
                     ForEach(items) { item in
@@ -341,6 +362,9 @@ private struct SettingsView: View {
     }
 
     private static func describe(_ entry: String, _ absent: Bool) -> String {
+        if Entry.isCommand(entry) {
+            return absent ? "\(entry) · no [widget.\(Entry.commandId(entry)!)] in config.toml" : "\(entry) (command widget)"
+        }
         let text = Entry.itemId(entry) ?? "\(entry) (built in)"
         return absent ? "\(text) · not running" : text
     }
@@ -447,6 +471,144 @@ private struct SettingsView: View {
               let frame = pillFrames[PillRef(row: .side(side), index: i)]
         else { return nil }
         return (frame, before)
+    }
+}
+
+// MARK: Widgets tab
+
+/// Command widgets: [widget.<id>] tables. Text is entered in the one-line
+/// prompt below the popup, since the popup itself never takes the keyboard.
+private struct WidgetsTab: View {
+    @ObservedObject private var config = Config.shared
+    @ObservedObject private var outputs = CommandWidgets.shared
+
+    private static let intervals: [(String, Double)] = [
+        ("1 s", 1), ("5 s", 5), ("30 s", 30), ("1 min", 60), ("5 min", 300), ("1 hour", 3600),
+    ]
+
+    var body: some View {
+        let ids = config.commands.keys.sorted()
+        VStack(alignment: .leading, spacing: 8) {
+            if ids.isEmpty {
+                Text("No command widgets yet. A command widget shows the first line of a shell command's output in a pill.")
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(ids, id: \.self) { row($0) }
+            HStack {
+                Button { create() } label: { Label("New Widget…", systemImage: "plus") }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .frame(height: 24)
+                    .background(Capsule().fill(Theme.foreground.opacity(0.1)))
+                Spacer()
+                Text("Commands run with zsh; Homebrew is on PATH")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.dim)
+            }
+        }
+    }
+
+    private func row(_ id: String) -> some View {
+        let c = config.commands[id]!
+        let output = outputs.outputs[id]
+        let inBar = config.effectiveLayout.entries.contains(Entry.command(id))
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: c.icon ?? "terminal").font(.system(size: 11)).frame(width: 16)
+                Text(id).font(.system(size: 12, weight: .semibold))
+                Text("every \(Self.intervalTitle(c.interval))").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
+                Spacer()
+                Button(inBar ? "In bar" : "Add to bar") { toggle(id, inBar: inBar) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .background(Capsule().fill(inBar ? Theme.accent.opacity(0.25) : Theme.foreground.opacity(0.1)))
+                Menu {
+                    Button("Edit Command…") { prompt("Command", c.command, 320) { config.setCommand(id, "command", .string($0)) } }
+                    Button("Edit Icon…") {
+                        prompt("SF Symbol", c.icon ?? "", 200) { config.setCommand(id, "icon", $0.isEmpty ? nil : .string($0)) }
+                    }
+                    Button("Edit Click Command…") {
+                        prompt("On click", c.click ?? "", 320, allowEmpty: true) {
+                            config.setCommand(id, "click", $0.isEmpty ? nil : .string($0))
+                        }
+                    }
+                    Picker("Refresh", selection: Binding(
+                        get: { c.interval }, set: { config.setCommand(id, "interval", .int(Int($0))) }
+                    )) {
+                        ForEach(Self.intervals, id: \.1) { Text("Every \($0.0)").tag($0.1) }
+                        if !Self.intervals.contains(where: { $0.1 == c.interval }) {
+                            Text("Every \(Self.intervalTitle(c.interval)) (config.toml)").tag(c.interval)
+                        }
+                    }
+                    Button("Refresh Now") { CommandWidgets.shared.refresh(id) }
+                    Divider()
+                    Button("Delete Widget", role: .destructive) { config.removeCommand(id) }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+            }
+            Text(c.command)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let error = output?.error {
+                Text(error).font(.system(size: 10.5)).foregroundStyle(Color(red: 0.97, green: 0.46, blue: 0.56)).lineLimit(2)
+            } else if let text = output?.text, !text.isEmpty {
+                Text("→ \(text)").font(.system(size: 10.5)).lineLimit(1)
+            } else if !inBar {
+                Text("Not running: it isn't in the bar.").font(.system(size: 10.5)).foregroundStyle(Theme.dim)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.foreground.opacity(0.06)))
+    }
+
+    private static func intervalTitle(_ seconds: Double) -> String {
+        seconds >= 3600 && seconds.truncatingRemainder(dividingBy: 3600) == 0 ? "\(Int(seconds / 3600)) h"
+            : seconds >= 60 && seconds.truncatingRemainder(dividingBy: 60) == 0 ? "\(Int(seconds / 60)) min"
+            : "\(Int(seconds)) s"
+    }
+
+    private func toggle(_ id: String, inBar: Bool) {
+        let entry = Entry.command(id)
+        config.updateLayout { l in
+            if inBar { l.remove([entry]) } else { l.move([entry], .end(.right)) }
+        }
+    }
+
+    /// The one-line prompt just below the popup.
+    private func prompt(
+        _ label: String, _ initial: String, _ width: CGFloat, allowEmpty: Bool = false,
+        save: @escaping (String) -> Void
+    ) {
+        let f = BarSettings.shared.frame ?? .zero
+        let anchor = NSRect(x: f.minX, y: f.minY, width: 0, height: 0)
+        TextPrompt.shared.begin(label: label, placeholder: "", initial: initial, width: width, below: anchor) { text in
+            if allowEmpty || !text.isEmpty { save(text) }
+        }
+    }
+
+    /// Name, then command; the second prompt waits for the first to close.
+    private func create() {
+        prompt("Name", "", 160) { name in
+            guard let id = Entry.sanitizedId(name), config.commands[id] == nil else {
+                NSSound.beep()
+                return
+            }
+            DispatchQueue.main.async {
+                prompt("Command", "", 320) { command in
+                    if !config.addCommand(id, command: command) { NSSound.beep() }
+                }
+            }
+        }
     }
 }
 
