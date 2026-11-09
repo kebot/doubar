@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Config.shared.start()
+        CommandWidgets.shared.start()
 
         IPC.listen { event, params in
             log("event '\(event)' \(params)")
@@ -82,7 +83,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func screensChanged() {
-        syncBars()
+        // A display connecting or disconnecting rebuilds every bar and notch
+        // from scratch. Moving the existing windows left stale panels behind
+        // (a status item's click panel outlived the bar it belonged to).
+        log("screens changed: rebuilding \(NSScreen.screens.count) bar(s)")
+        rebuildAll()
         // macOS can order our windows out after the screen list has already
         // changed, while the reconfiguration settles. Re-assert a few times.
         reassertWork.forEach { $0.cancel() }
@@ -93,6 +98,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
             return work
         }
+    }
+
+    /// Close every bar and notch panel; `syncBars` then makes them anew.
+    private func rebuildAll() {
+        // A reconfiguration can momentarily report no screens; keep what we have.
+        guard !NSScreen.screens.isEmpty else { return syncBars() }
+        for bar in bars.values { bar.tearDown() }
+        bars = [:]
+        MainActor.assumeIsolated {
+            for panel in notches.values { panel.close() }
+            notches = [:]
+        }
+        syncBars()
     }
 
     private func syncBars() {
@@ -120,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         for (id, bar) in bars where !seen.contains(id) {
             log("display \(id) gone, closing its bar")
-            bar.close()
+            bar.tearDown()
             bars[id] = nil
         }
 

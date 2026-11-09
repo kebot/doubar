@@ -166,6 +166,16 @@ struct TomlDocument {
         return replacing(t.header.lowerBound..<t.end, with: "[\(Self.path(table))]\n" + body)
     }
 
+    /// Remove `table`, from its header through its last key. Comments
+    /// before the header and after the last key stay.
+    func removingTable(_ table: [String]) -> String {
+        guard let t = tables[table], !table.isEmpty else { return text }
+        var end = t.end
+        // The blank line that separated it from the next table goes too.
+        if end < scalars.count, scalars[end] == "\n" { end += 1 }
+        return replacing(t.header.lowerBound..<end, with: "")
+    }
+
     private func appendingTable(_ table: [String], body: String, comment: String? = nil) -> String {
         var out = text
         if !out.isEmpty && !out.hasSuffix("\n") { out += "\n" }

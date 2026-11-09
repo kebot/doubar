@@ -64,6 +64,7 @@ icon = "foreground"          # status items' grey parts, with tint = "palette"
 #                                      "status:com.apple.MenuBarAgent/com.apple.menuextra.wifi"
 #   "status:<app id>"                  every item of one app, e.g. "status:eu.exelban.Stats"
 #   "settings"                         the button that opens the settings popup
+#   "widget:<id>"                      a command widget, from [widget.<id>] below
 #   [ ... ]                            several entries sharing one pill
 #
 # Anything not listed is not shown: a new app's status item stays out of the
@@ -86,6 +87,20 @@ right = [
   "clock",
   "settings",
 ]
+
+# Command widgets: a pill showing the first line of a shell command's output.
+# Add one to [layout] as "widget:<id>"; the settings popup's Widgets tab
+# creates, edits and deletes them. Only widgets in the layout run. Commands
+# run with `zsh -c` (Homebrew is on PATH) and are killed after 20 s; a
+# failing one shows a warning icon, and the Widgets tab shows why.
+#
+# [widget.battery]
+# command = "pmset -g batt | grep -o '[0-9]*%'"
+# interval = 30            # seconds between runs
+# icon = "battery.75percent"   # an SF Symbol, optional
+# click = "open -a 'System Settings'"   # optional; a click refreshes otherwise
+# max-length = 40          # longer output is cut with an ellipsis
+# style = { pill = "accent", text = "background" }
 
 [clock]
 # A DateFormatter pattern; without one, the system's numeric date and time.

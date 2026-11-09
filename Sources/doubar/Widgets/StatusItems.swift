@@ -669,8 +669,35 @@ private struct StatusItemClickTarget: NSViewRepresentable {
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+        private var closeObserver: Any?
+
+        /// The panel is a window of its own, so closing the bar window
+        /// doesn't take it along: without this, a display that goes away
+        /// leaves its click panels (and their pictures) on screen for good.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+            closeObserver = nil
+            guard let window else { return panel.orderOut(nil) }
+            closeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.panel.orderOut(nil) }
+            if let last { place(last.frame, content: last.content) }
+        }
+
+        /// The latest request, to show the panel once the view is in a window.
+        private var last: (frame: NSRect, content: AnyView)?
+
+        deinit {
+            if let closeObserver { NotificationCenter.default.removeObserver(closeObserver) }
+            panel.orderOut(nil)
+        }
+
         func place(_ frame: NSRect, content: AnyView) {
-            guard frame.width > 0, frame.height > 0 else { panel.orderOut(nil); return }
+            last = (frame, content)
+            // A bar window that has closed can still be updated while its
+            // tree is alive; its panels must not come back.
+            guard frame.width > 0, frame.height > 0, window?.isVisible == true else { panel.orderOut(nil); return }
             host.rootView = content
             if panel.frame != frame { panel.setFrame(frame, display: true) }
             if !panel.isVisible { panel.orderFrontRegardless() }

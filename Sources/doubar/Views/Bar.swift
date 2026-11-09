@@ -62,6 +62,8 @@ struct BarView: View {
         switch entry {
         case "clock", "settings":
             return [.widget(entry)]
+        case _ where Entry.isCommand(entry):
+            return [.widget(entry)]
         default:
             return statusItems.items(for: entry).compactMap { item in
                 statusItems.images[item.id].map { .status(item, $0) }
@@ -104,6 +106,7 @@ private struct BarPill: View {
     private func padding(_ widget: String?) -> CGFloat {
         switch widget {
         case "clock": config.bar.pillPadding
+        case _ where widget.map(Entry.isCommand) == true: config.bar.pillPadding
         default: 4
         }
     }
@@ -139,6 +142,8 @@ private struct BarPartView: View {
     private func widget(_ name: String) -> some View {
         switch name {
         case "clock": ClockView().padding(.horizontal, shared ? 6 : 0)
+        case _ where Entry.isCommand(name):
+            CommandWidgetView(id: Entry.commandId(name)!).padding(.horizontal, shared ? 6 : 0)
         default: EmptyView()
         }
     }

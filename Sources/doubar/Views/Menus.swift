@@ -14,9 +14,10 @@ struct EntryMenu: View {
     var body: some View {
         switch key {
         case "clock": ClockMenu(anchor: anchor)
+        case _ where Entry.isCommand(key): CommandMenu(id: Entry.commandId(key)!, anchor: anchor)
         default: EmptyView()
         }
-        if key == "clock" {
+        if key == "clock" || Entry.isCommand(key) {
             StyleMenu(widget: key)
         }
         if Entry.isStatus(key) {
@@ -56,6 +57,44 @@ private struct ClockMenu: View {
             }
         }
         Divider()
+    }
+}
+
+/// A command widget's own options; the rest is in the settings popup's
+/// Widgets tab.
+private struct CommandMenu: View {
+    @ObservedObject private var config = Config.shared
+    let id: String
+    let anchor: NSRect
+
+    private static let intervals: [(String, Double)] = [
+        ("Every second", 1), ("Every 5 seconds", 5), ("Every 30 seconds", 30),
+        ("Every minute", 60), ("Every 5 minutes", 300), ("Every hour", 3600),
+    ]
+
+    var body: some View {
+        if let command = config.commands[id] {
+            Button("Refresh Now") { CommandWidgets.shared.refresh(id) }
+            Picker("Refresh", selection: Binding(
+                get: { command.interval },
+                set: { config.setCommand(id, "interval", .int(Int($0))) }
+            )) {
+                ForEach(Self.intervals, id: \.1) { Text($0.0).tag($0.1) }
+                if !Self.intervals.contains(where: { $0.1 == command.interval }) {
+                    Text("Every \(Int(command.interval)) s (config.toml)").tag(command.interval)
+                }
+            }
+            .pickerStyle(.menu)
+            Button("Edit Command…") {
+                TextPrompt.shared.begin(
+                    label: id, placeholder: "shell command", initial: command.command, width: 320, below: anchor
+                ) { text in
+                    if !text.isEmpty { config.setCommand(id, "command", .string(text)) }
+                }
+            }
+            Button("Edit in Widgets Tab…") { BarSettings.shared.open(below: anchor, tab: .widgets) }
+            Divider()
+        }
     }
 }
 

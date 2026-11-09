@@ -5,7 +5,9 @@ import SwiftUI
 final class Screen: ObservableObject {
     @Published var monitorId: Int
     /// The bar window's frame in screen coordinates, to place popups.
-    var windowFrame: NSRect = .zero
+    /// Published, so the status items' click panels follow when the
+    /// display moves without the bar's size changing.
+    @Published var windowFrame: NSRect = .zero
     init(monitorId: Int) { self.monitorId = monitorId }
 
     /// Convert a rect in SwiftUI's top-left window space to AppKit screen
@@ -55,10 +57,20 @@ final class BarWindow: NSPanel {
 
     func place(on screen: NSScreen, monitorId: Int) {
         if screenState.monitorId != monitorId { screenState.monitorId = monitorId }
-        screenState.windowFrame = Self.frame(on: screen)
-        setFrame(screenState.windowFrame, display: true)
+        let frame = Self.frame(on: screen)
+        if screenState.windowFrame != frame { screenState.windowFrame = frame }
+        setFrame(frame, display: true)
         // The app is never active, so plain orderFront: is a no-op.
         orderFrontRegardless()
+    }
+
+    /// Close for good: drop the SwiftUI tree too, so nothing keeps updating
+    /// (and re-showing the status items' click panels) for a display that
+    /// is gone.
+    func tearDown() {
+        (contentView as? NSHostingView<AnyView>)?.rootView = AnyView(EmptyView())
+        contentView = nil
+        close()
     }
 
     override var canBecomeKey: Bool { false }
